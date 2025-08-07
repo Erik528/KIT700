@@ -1,0 +1,240 @@
+html {
+    scroll-behavior: smooth;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: #081e46;
+    font-family: "Nunito", sans-serif;
+    font-weight: 700;
+}
+
+body,
+p {
+    font-family: "Roboto", sans-serif;
+    font-weight: 400;
+}
+
+a {
+    color: #6dc9af;
+    text-decoration: none;
+}
+
+.btn {
+    padding: 0.575rem 1.2rem;
+    min-width: 120px;
+}
+
+a:hover {
+    color: #14342d;
+}
+
+.btn-primary {
+    background-color: #ffc500;
+    font-family: "Roboto", sans-serif;
+    color: #000;
+    border: 1px solid #ffc500;
+    transition: .3s ease;
+    font-weight: 700;
+}
+
+.btn-primary:hover {
+    background-color: #0249b3;
+    color: #fff;
+    border: 1px solid #0249b3;
+}
+
+.btn-secondary {
+    background-color: #0249b3;
+    font-family: "Roboto", sans-serif;
+    color: #fff;
+    border: 1px solid #0249b3;
+    transition: .3s ease;
+    font-weight: 700;
+}
+
+.btn-secondary:hover {
+    background-color: #ffc500;
+    color: #000;
+    border: 1px solid #ffc500;
+}
+
+header {
+    background-color: #14342d;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+    width: 100%;
+    z-index: 2;
+}
+
+header .btn-secondary:hover {
+    border: 1px solid #ffc500;
+}
+
+header .navbar-collapse {
+    justify-content: flex-end;
+}
+
+header .navbar {
+    padding: 1rem 0;
+}
+
+.navbar-brand img,
+.charity-logo img {
+    max-width: 133px;
+}
+
+.login.active {
+    text-decoration: none !important;
+}
+
+a.nav-link {
+    color: #fff !important;
+    font-family: "Nunito", sans-serif;
+    transition: .3s ease;
+}
+
+.navbar .nav-link.active {
+    color: #fff !important;
+    text-decoration: underline;
+}
+
+header .navbar-toggler {
+    padding: 0;
+    border: 0;
+    outline: 0;
+}
+
+.banner {
+    margin-bottom: 2rem;
+    padding: 3rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    color: #fff;
+    height: 20rem;
+    background-image: url('../img/background.jpg');
+    background-repeat: no-repeat;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+    z-index: 1;
+}
+
+.banner:before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    background-color: rgba(0, 0, 0, 0.6);
+    z-index: -1;
+    height: 100%;
+    width: 100%;
+    z-index: -1;
+}
+
+.banner h1 {
+    color: #fff;
+}
+
+/* Padding Box Component*/
+.padding-box {
+    padding: 1.5rem;
+    border: 1px solid #bebcbc;
+    border-radius: 5px;
+    margin: 0 auto;
+}
+
+.padding-box input {
+    height: 46px;
+}
+
+@media(min-width:768px) {
+    .padding-box {
+        padding: 2rem;
+        max-width: 500px;
+    }
+
+    .padding-box h2 {
+        line-height: 1.4;
+    }
+}
+
+@media(min-width:1200px) {
+    .padding-box {
+        padding: 3rem;
+    }
+}
+
+/* Staff Dashboard Cycle*/
+.cycle {
+    margin: 0 auto;
+    padding: 1rem;
+    border: 1px solid #bebcbc;
+    background: rgba(190 188 188 / 20%);
+}
+
+.cycle .progress {
+    border: 1px solid rgba(190 188 188 / 30%);
+}
+
+.status {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+@media(min-width:768px) {
+    .cycle {
+        max-width: 500px;
+    }
+}
+
+
+/* Affirmation History*/
+.aff-content {
+    padding: 1.5rem;
+    border: 1px solid #bebcbc;
+}
+
+.affirmation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: start;
+    margin-bottom: 0.6rem;
+}
+
+.aff-content {
+    background: rgba(190 188 188 / 20%);
+}
+
+.affirmation img {
+    border-radius: 50%;
+}
+
+.affirmation .content {
+    padding-left: 0.6rem;
+    color: #000;
+    border-bottom: 1px solid #bebebe;
+    padding-bottom: 0.4rem;
+}
+
+.affirmation .content p {
+    margin-bottom: 0.1rem;
+}
+
+
+@media(max-width:767px) {
+    .affirmation img {
+        margin-bottom: 0.3rem;
+    }
+
+    .affirmation .content {
+        padding-left: 0;
+    }
+}
