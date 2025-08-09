@@ -238,3 +238,26 @@ header .navbar-toggler {
         padding-left: 0;
     }
 }
+
+/*aff modal*/
+.aff-modal .custom-btn {
+    height: 65px;
+    width: 65px;
+    border-radius: 50%;
+    min-width: 0;
+    box-shadow: none;
+}
+
+.aff-form .dropdown-menu {
+    width: 100%;
+}
+
+.aff-form label {
+    display: none;
+}
+
+@media(min-width:576px) {
+    .aff-form textarea {
+        height: 12.5rem;
+    }
+}

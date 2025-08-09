@@ -1,38 +1,68 @@
 $(document).ready(function () {
 
-    console.log("Document is ready ");
-    // $("#header").load("header.html",
-    //     function () {
+    //Affirmation form search bar 
+    $("#searchInput").on("keyup click", function () {
+        let value = $(this).val().toLowerCase();
+        let $dropdown = $("#dropdownList");
 
-    //         console.log("Header loaded ");
+        if (value.length > 0) {
+            $dropdown.addClass("show");
+        } else {
+            $dropdown.removeClass("show");
+        }
 
-    //         // Remove 'active' class from all .nav-link elements
+        $dropdown.find(".dropdown-item").filter(function () {
+            $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1);
+        });
+    });
 
-    //         $(".nav-link").removeClass("active");
-    //         // Set up click handlers
-
-    //         console.log("Setting up click handlers ");
-
-    //         $(".nav-link").each(function () {
-
-    //             if (this.href ==
-    //                 window.location.href) {
-
-    //                 $(this).addClass("active");
-
-    //             }
-
-    //         });
-
-    //         console.log("Click handlers set up ");
-
-    //     });
-
-    // $("#footer").load("footer.html",
-    //     function () {
-
-    //         console.log("Footer loaded ");
-
-    //     });
-
+    // Hide dropdown when clicking outside
+    $(document).click(function (e) {
+        if (!$(e.target).closest('.dropdown').length) {
+            $("#dropdownList").removeClass("show");
+        }
+    });
 });
+
+//Submission Confirmation Modal
+document.getElementById("affirmationForm").addEventListener("submit", function (e) {
+    e.preventDefault(); // Prevent actual form submission
+    $('#exampleModalCenter').modal('hide'); // Close the form modal
+    setTimeout(() => {
+        $('#confirmationModal').modal('show'); // Show confirmation after close
+    }, 300); // Delay so animations don't overlap
+});
+
+//250 word checking js
+document.addEventListener("DOMContentLoaded", function () {
+    const messageBox = document.getElementById("exampleFormControlTextarea1");
+    const form = document.getElementById("affirmationForm");
+
+    messageBox.addEventListener("input", function () {
+        let words = messageBox.value.trim().split(/\s+/).filter(Boolean);
+
+        if (words.length > 250) {
+            // Keep only the first 250 words
+            messageBox.value = words.slice(0, 250).join(" ");
+            alert("You can only enter up to 250 words.");
+        }
+    });
+
+    // On form submit
+    form.addEventListener("submit", function (e) {
+        let words = messageBox.value.trim().split(/\s+/).filter(Boolean);
+        if (words.length > 250) {
+            e.preventDefault();
+            alert("Your message exceeds the 250-word limit.");
+        } else {
+            // Hide the form modal
+            $('#exampleModalCenter').modal('hide');
+            // Show the confirmation modal after short delay
+            setTimeout(() => {
+                $('#confirmationModal').modal('show');
+            }, 300);
+        }
+    });
+});
+
+
