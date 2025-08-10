@@ -109,7 +109,6 @@ header .navbar-toggler {
 }
 
 .banner {
-    margin-bottom: 2rem;
     padding: 3rem 0;
     display: flex;
     flex-wrap: wrap;
@@ -256,8 +255,54 @@ header .navbar-toggler {
     display: none;
 }
 
+.navbar-light .navbar-toggler-icon {
+    background-image: url("data:image/svg+xml;charset=utf8,%3Csvg viewBox='0 0 30 30' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath stroke='white' stroke-width='2' stroke-linecap='round' stroke-miterlimit='10' d='M4 7h22M4 15h22M4 23h22'/%3E%3C/svg%3E");
+}
+
 @media(min-width:576px) {
     .aff-form textarea {
         height: 12.5rem;
+    }
+}
+
+
+/*Index Page*/
+.index-banner {
+    height: 100vh;
+}
+
+
+/*Sign in Page*/
+.padding-box {
+    max-width: 100%;
+}
+
+.sign-in .cycle,
+.dashboard-history .cycle {
+    max-width: 100%;
+}
+
+.dashboard-history .aff-content {
+    position: relative;
+}
+
+.dashboard-history .aff-modal {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+}
+
+@media(max-width:991px) {
+
+    .sign-in .col-left,
+    .dashboard-history .col-left {
+        order: 2;
+        padding: 1rem;
+    }
+
+    .sign-in .col-right,
+    .dashboard-history .col-right {
+        order: 1;
+        padding: 1rem;
     }
 }
