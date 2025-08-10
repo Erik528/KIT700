@@ -33,7 +33,7 @@ document.getElementById("affirmationForm").addEventListener("submit", function (
     }, 300); // Delay so animations don't overlap
 });
 
-//250 word checking js
+//Affirmation form word count
 document.addEventListener("DOMContentLoaded", function () {
     const messageBox = document.getElementById("exampleFormControlTextarea1");
     const form = document.getElementById("affirmationForm");
