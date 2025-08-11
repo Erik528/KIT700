@@ -33,13 +33,19 @@ a:hover {
     color: #14342d;
 }
 
+.btn {
+    border-radius: 0;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+}
+
 .btn-primary {
     background-color: #ffc500;
     font-family: "Roboto", sans-serif;
     color: #000;
     border: 1px solid #ffc500;
     transition: .3s ease;
-    font-weight: 700;
 }
 
 .btn-primary:hover {
@@ -54,24 +60,19 @@ a:hover {
     color: #fff;
     border: 1px solid #0249b3;
     transition: .3s ease;
-    font-weight: 700;
 }
 
 .btn-secondary:hover {
     background-color: #ffc500;
     color: #000;
-    border: 1px solid #ffc500;
+    border: 1px solid #0249b3;
 }
 
 header {
-    background-color: #14342d;
+    background-color: #ffc500;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
     width: 100%;
     z-index: 2;
-}
-
-header .btn-secondary:hover {
-    border: 1px solid #ffc500;
 }
 
 header .navbar-collapse {
@@ -80,6 +81,10 @@ header .navbar-collapse {
 
 header .navbar {
     padding: 1rem 0;
+}
+
+header .navbar-brand img {
+    height: 50px;
 }
 
 .navbar-brand img,
@@ -139,6 +144,13 @@ header .navbar-toggler {
 
 .banner h1 {
     color: #fff;
+    margin-bottom: 1.5rem;
+}
+
+@media(min-width:992px) {
+    .btn {
+        padding: 1rem 1.2rem;
+    }
 }
 
 /* Padding Box Component*/

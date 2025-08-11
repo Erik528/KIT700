@@ -19,14 +19,15 @@
     <header class="header" id="headerTop">
         <div class="container">
             <nav class="navbar navbar-expand-lg navbar-light">
-                <a class="navbar-brand" href="index.php"><img src="./img/logo.png" alt="Logo" class="img-fluid"></a>
+                <a class="navbar-brand" href="index.php"><img src="./img/LCGS_FullColour_Primary.svg" alt="Logo"
+                        class="img-fluid"></a>
                 <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav"
                     aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
                 </button>
                 <div class="collapse navbar-collapse" id="navbarNav">
                     <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                        <li class="nav-item">
+                        <!-- <li class="nav-item">
                             <a class="nav-link" href="index.php">Home</a>
                         </li>
                         <li class="nav-item">
@@ -37,7 +38,7 @@
                         </li>
                         <li class="nav-item">
                             <a class="nav-link login" href="login.php">Login / Logout</a>
-                        </li>
+                        </li> -->
                         <li class="nav-item mt-2 mt-lg-0 ms-lg-2">
                             <a href="login.php" class="btn btn-secondary">Sign In</a>
                         </li>
