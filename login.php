@@ -1,3 +1,26 @@
+<?php
+$err = $_GET['err'] ?? '';
+?>
+<script>
+    (function () {
+        const err = <?= json_encode($err) ?>;
+        if (!err) return;
+
+        const map = {
+            empty: "EntraID cannot be empty, please try again.",
+            domain: "EntraID domain not allowed.",
+            invalid: "EntraID error, please try again."
+        };
+
+        alert(map[err] || "Login error, please try again.");
+
+        const url = new URL(window.location);
+        url.searchParams.delete('err');
+        window.history.replaceState({}, '', url);
+    })();
+</script>
+
+
 <?php include 'header.php'; ?>
 
 <div class="body">
@@ -14,7 +37,7 @@
                     <div class="login padding-box text-center">
                         <h2>Welcome to College Affirmations Portal</h2>
                         <p>Please fill the form below for registering with us as a charity partner.</p>
-                        <form class="login-form text-center">
+                        <form class="login-form text-center" method="POST" action="login_action.php">
                             <span id="msg"></span>
 
                             <div class="form-group">
