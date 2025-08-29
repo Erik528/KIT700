@@ -59,13 +59,42 @@ a:hover {
     font-family: "Roboto", sans-serif;
     color: #fff;
     border: 1px solid #0249b3;
-    transition: .3s ease;
+    transition: .3s ease all;
 }
 
 .btn-secondary:hover {
     background-color: #ffc500;
     color: #000;
     border: 1px solid #0249b3;
+}
+
+.btn-tertiary {
+    background-color: #e7e7e7;
+}
+
+.btn-tertiary:hover {
+    background-color: #7c7c7c;
+    color: #fff;
+}
+
+.btn-tertiary:focus,
+.btn:focus {
+    box-shadow: none;
+}
+
+.btn-outline {
+    border: 1px solid #a1a1a1;
+    width: 100%;
+    letter-spacing: 0;
+    text-transform: capitalize;
+    padding: 0.7rem;
+    transition: .3s ease all;
+}
+
+.btn-outline.active,
+.btn-outline:hover {
+    background-color: #969595;
+    color: #fff;
 }
 
 header {
@@ -153,6 +182,12 @@ header .navbar-toggler {
     }
 }
 
+@media(max-width:575px) {
+    .btn {
+        letter-spacing: 0;
+    }
+}
+
 /* Padding Box Component*/
 .padding-box {
     padding: 1.5rem;
@@ -214,9 +249,10 @@ header .navbar-toggler {
 }
 
 .affirmation {
-    display: flex;
+    /* display: flex;
     flex-wrap: wrap;
-    align-items: start;
+    align-items: start; */
+    display: block;
     margin-bottom: 0.6rem;
 }
 
@@ -318,3 +354,227 @@ header .navbar-toggler {
         padding: 1rem;
     }
 }
+
+/* Manager dashboard css */
+.msg {
+    background: #fff;
+    border: 1px solid #e1e4e8;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 15px rgba(16, 24, 40, .2);
+    margin-bottom: 1rem;
+}
+
+.msg__head {
+    padding: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    transition: .3s ease all;
+}
+
+.msg .text {
+    max-width: 69%;
+    flex-basis: 69%;
+    padding: 0 0.7rem;
+}
+
+.msg__details {
+    padding: 1rem;
+    border-top: 1px solid #e1e4e8;
+}
+
+.avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: #e8ebef;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: 700;
+    color: #4b5563;
+}
+
+.state {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 200px;
+    margin: 0 1rem;
+}
+
+.status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 50px;
+    font-size: 12px;
+    border: 1px solid #e1e4e8;
+    color: #374151;
+    background: #fafbfc;
+    min-width: 94px;
+    transition: .3s ease all;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.status--unread .dot {
+    background: #ffc500;
+}
+
+
+.status--flagged .dot {
+    background: #ff0000;
+}
+
+.status--forwarded .dot {
+    background: #0249b3;
+}
+
+.arrow-btn {
+    border: 0;
+    background: transparent;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    transition: transform .25s ease, background .15s ease;
+    outline: none !important;
+    cursor: pointer;
+}
+
+.meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #6b7280;
+    font-size: 12px;
+    min-width: 70px;
+    justify-content: center;
+}
+
+/* start hidden for slideDown/Up */
+.msg__details {
+    display: none;
+}
+
+/* rotate the arrow when open */
+.arrow-btn i {
+    transition: transform .25s ease;
+}
+
+.msg.is-open .arrow-btn i {
+    transform: rotate(180deg);
+}
+
+@media(min-width:1200px) {
+    .msg__head:hover {
+        background-color: #ffc500;
+    }
+
+    .msg__head:hover .status {
+        background: #1D9EDA;
+        color: #fff;
+        border: 1px solid #1D9EDA;
+    }
+}
+
+@media(max-width:991px) {
+    .msg .text {
+        font-size: 14px;
+        max-width: 58%;
+        flex-basis: 58%;
+    }
+
+    .msg__details {
+        font-size: 14px;
+    }
+}
+
+@media(max-width:767px) {
+
+    .msg__head,
+    .msg__details {
+        padding: 0.7rem;
+    }
+
+    .msg .text {
+        max-width: 100%;
+        flex-basis: 100%;
+        margin: 0.5rem 0;
+        padding: 0;
+    }
+
+    .state {
+        margin: 0;
+        justify-content: flex-end;
+        width: 100%;
+        max-width: 100%;
+    }
+}
+
+.card-inbox {
+    border-radius: 12px
+}
+
+/* top “color bar” like your wireframes */
+.modal-header.strip {
+    border-bottom: 0;
+    padding: 0
+}
+
+.modal-header.strip .bar {
+    height: 48px;
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: .5rem .45rem;
+}
+
+.modal-header.strip .close {
+    background: rgba(0, 0, 0, .08);
+    border-radius: 50%;
+    line-height: 1;
+    padding: .4rem .8rem;
+    opacity: 1;
+    margin: 0;
+}
+
+.modal-header.strip .close:focus {
+    outline: 0;
+}
+
+.bar-yellow {
+    background: #ffc500
+}
+
+.bar-blue {
+    background: #0249b4;
+    color: #fff
+}
+
+.bar-green {
+    background: #22c55e;
+    color: #fff
+}
+
+/* “chip” buttons */
+#reasonsGroup .btn {
+    font-weight: 700;
+    min-width: 240px
+}
+
+#reasonsGroup .btn input {
+    display: none
+}
+
+/* hide native checkbox text */
