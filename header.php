@@ -26,22 +26,16 @@
                     <span class="navbar-toggler-icon"></span>
                 </button>
                 <div class="collapse navbar-collapse" id="navbarNav">
-                    <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                        <!-- <li class="nav-item">
-                            <a class="nav-link" href="index.php">Home</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="registration.php">Registration</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="charity_list.php">Charity List</a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link login" href="login.php">Login / Logout</a>
-                        </li> -->
-                        <li class="nav-item mt-2 mt-lg-0 ms-lg-2">
-                            <a href="login.php" class="btn btn-secondary">Sign In</a>
-                        </li>
+                    <ul class="navbar-nav ml-auto ms-auto d-flex align-items-center">
+                        <?php if (!empty($_SESSION['user_id'])): ?>
+                            <li class="nav-item">
+                                <a href="logout.php" class="btn btn-secondary btn-sm">Logout</a>
+                            </li>
+                        <?php else: ?>
+                            <li class="nav-item">
+                                <a href="login.php" class="btn btn-secondary btn-sm">Sign In</a>
+                            </li>
+                        <?php endif; ?>
                     </ul>
                 </div>
             </nav>
