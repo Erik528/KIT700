@@ -41,3 +41,54 @@
             </nav>
         </div>
     </header>
+
+    <?php
+    // --- Dynamic banner (put this inside header.php where the banner should render) ---
+
+    // Optional per-page controls (set these BEFORE including header.php):
+    // $banner_title    = 'Custom Title';   // override
+    // $banner_subtitle = 'Optional subtitle';
+    // $show_banner     = false;            // hide banner on a specific page
+    // $banner_class    = 'banner--compact';
+
+    $show_banner  = $show_banner ?? true;
+    $banner_class = $banner_class ?? '';
+
+    if ($show_banner) {
+        if (!isset($banner_title) || trim($banner_title) === '') {
+            // derive from the requesting page (not header.php)
+            $script   = $_SERVER['SCRIPT_NAME'] ?? $_SERVER['PHP_SELF'] ?? '';
+            $filename = pathinfo($script, PATHINFO_FILENAME);
+
+            // friendly names for common routes
+            $friendly = [
+                'index'        => 'Home',
+                'manager-dash' => 'Manager Dashboard',
+                'staff-dash'   => 'Staff Dashboard',
+                'admin-dash'   => 'Admin Dashboard',
+                'login '       => 'Login Page'
+            ];
+
+            if (isset($friendly[$filename])) {
+                $banner_title = $friendly[$filename];
+            } else {
+                // humanize filename: hyphens/underscores -> spaces; split camelCase; Title Case
+                $title = preg_replace('/[-_]+/', ' ', $filename);
+                $title = preg_replace('/(?<!^)(?=[A-Z])/', ' ', $title);
+                $banner_title = ucwords(trim($title));
+            }
+        }
+
+        $banner_subtitle = $banner_subtitle ?? null;
+    ?>
+        <div class="banner <?= htmlspecialchars($banner_class, ENT_QUOTES, 'UTF-8') ?>">
+            <div class="container">
+                <h1><?= htmlspecialchars($banner_title, ENT_QUOTES, 'UTF-8') ?></h1>
+                <?php if ($banner_subtitle): ?>
+                    <p class="text-muted mb-0"><?= htmlspecialchars($banner_subtitle, ENT_QUOTES, 'UTF-8') ?></p>
+                <?php endif; ?>
+            </div>
+        </div>
+    <?php
+    }
+    // --- /Dynamic banner ---

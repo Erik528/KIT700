@@ -1,4 +1,5 @@
-<?php include 'header.php'; ?>
+<?php $show_banner = false;
+include 'header.php'; ?>
 
 <div class="body">
     <div class="banner index-banner">

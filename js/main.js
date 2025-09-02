@@ -130,8 +130,8 @@ $(document).ready(function () {
             const full = $p.text().trim();
             const words = full.split(/\s+/);
 
-            if (words.length > 35) {
-                const short = words.slice(0, 35).join(' ') + '…';
+            if (words.length > 20) {
+                const short = words.slice(0, 20).join(' ') + '…';
                 $p
                     .data('full', full)
                     .data('short', short)

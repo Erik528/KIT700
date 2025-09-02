@@ -157,6 +157,7 @@ header .navbar-toggler {
     background-position: center;
     position: relative;
     z-index: 1;
+    margin-bottom: 3rem;
 }
 
 .banner:before {
@@ -180,11 +181,34 @@ header .navbar-toggler {
     .btn {
         padding: 1rem 1.2rem;
     }
+
+}
+
+@media(max-width:1199px) {
+    .banner {
+        margin-bottom: 2rem;
+        height: 17rem;
+    }
 }
 
 @media(max-width:575px) {
     .btn {
         letter-spacing: 0;
+    }
+
+    .banner {
+        padding: 2rem 0;
+        height: 14rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .banner h1 {
+        font-size: 1.875rem;
+    }
+
+    body,
+    p {
+        font-size: 0.875rem;
     }
 }
 
@@ -235,17 +259,18 @@ header .navbar-toggler {
     justify-content: space-between;
 }
 
-@media(min-width:768px) {
+/* @media(min-width:768px) {
     .cycle {
         max-width: 500px;
     }
-}
+} */
 
 
 /* Affirmation History*/
 .aff-content {
-    padding: 1.5rem;
+    padding: 1rem;
     border: 1px solid #bebcbc;
+    background: rgba(190 188 188 / 20%);
 }
 
 .affirmation {
@@ -253,11 +278,9 @@ header .navbar-toggler {
     flex-wrap: wrap;
     align-items: start; */
     display: block;
+    word-break: break-word;
     margin-bottom: 0.6rem;
-}
-
-.aff-content {
-    background: rgba(190 188 188 / 20%);
+    background-color: #fff;
 }
 
 .affirmation img {
@@ -275,6 +298,12 @@ header .navbar-toggler {
     margin-bottom: 0.1rem;
 }
 
+@media(max-width:1199px) {
+    .aff-content {
+        padding: 1rem;
+    }
+}
+
 
 @media(max-width:767px) {
     .affirmation img {
@@ -283,6 +312,10 @@ header .navbar-toggler {
 
     .affirmation .content {
         padding-left: 0;
+    }
+
+    .aff-content {
+        padding: 1rem;
     }
 }
 
@@ -317,6 +350,7 @@ header .navbar-toggler {
 /*Index Page*/
 .index-banner {
     height: 100vh;
+    margin-bottom: 0;
 }
 
 

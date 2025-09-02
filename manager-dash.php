@@ -1,11 +1,6 @@
 <?php include 'header.php'; ?>
 
 <div class="body">
-    <div class="banner">
-        <div class="container">
-            <h1>Manager Dashboard</h1>
-        </div>
-    </div>
 
     <div class="inbox mt-3 mt-lg-5">
         <div class="container">
@@ -97,8 +92,9 @@
                         Mentitum persequeris at his, democritum intellegam ex est, qui graece prodesset repudiandae.
                     </p>
                     <div class="actions">
-                        <button class="btn btn-tertiary" type="button">Flag as Abuse</button>
-                        <button class="btn btn-primary" type="button">Forward</button>
+                        <button class="btn btn-tertiary" type="button" data-toggle="modal" data-target="#flagModal">Flag
+                            as Abuse</button>
+                        <button class="btn btn-primary" type="button" id="btnForward">Forward</button>
                     </div>
                 </div>
             </article>
@@ -144,149 +140,9 @@
                         Mentitum persequeris at his, democritum intellegam ex est, qui graece prodesset repudiandae.
                     </p>
                     <div class="actions">
-                        <button class="btn btn-tertiary" type="button">Flag as Abuse</button>
-                        <button class="btn btn-primary" type="button">Forward</button>
-                    </div>
-                </div>
-            </article>
-
-            <article class="msg" aria-expanded="false">
-                <div class="msg__head" role="button" aria-controls="m1-details" aria-expanded="false">
-                    <div class="avatar">E</div>
-
-                    <div class="text">
-                        <div class="to-line">to <b>Erik</b></div>
-                        <div class="subject">Preview of Subject</div>
-                        <div class="snippet">Lorem ipsum dolor sit amet, id sententiae intellegam ius, his et facer
-                            reformidans intellegabat…</div>
-                    </div>
-
-                    <div class="state">
-                        <div class="status status--unread" title="Unread">
-                            <span class="dot" aria-hidden="true"></span><span>Unread</span>
-                        </div>
-                        <!-- Example alternatives:
-                            <div class="status status--forwarded"><span class="dot"></span><span>Forwarded</span></div>
-                            <div class="status status--flagged"><span class="dot"></span><span>Flagged</span></div>
-                            -->
-
-                        <div class="meta" aria-label="Date">
-                            <!-- clock -->
-                            <i class="fa-solid fa-clock"></i>
-                            <span>Aug&nbsp;4</span>
-                        </div>
-
-                        <button class="arrow-btn" type="button" aria-label="Toggle details">
-                            <!-- chevron down -->
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </button>
-                    </div>
-
-                </div>
-
-                <div class="msg__details" id="m1-details">
-                    <p class="details-text">
-                        Lorem ipsum dolor sit amet, has ea vidit dolorem voluptaria, ut sea delenit vivendum.
-                        Veri detraxit honestatis ei mel, paulo feugiat te has. Pri aeque aliquando tincidunt ei.
-                        Mentitum persequeris at his, democritum intellegam ex est, qui graece prodesset repudiandae.
-                    </p>
-                    <div class="actions">
-                        <button class="btn btn-tertiary" type="button">Flag as Abuse</button>
-                        <button class="btn btn-primary" type="button">Forward</button>
-                    </div>
-                </div>
-            </article>
-
-            <article class="msg" aria-expanded="false">
-                <div class="msg__head" role="button" aria-controls="m1-details" aria-expanded="false">
-                    <div class="avatar">E</div>
-
-                    <div class="text">
-                        <div class="to-line">to <b>Erik</b></div>
-                        <div class="subject">Preview of Subject</div>
-                        <div class="snippet">Lorem ipsum dolor sit amet, id sententiae intellegam ius, his et facer
-                            reformidans intellegabat…</div>
-                    </div>
-
-                    <div class="state">
-                        <div class="status status--flagged" title="Flagged">
-                            <span class="dot" aria-hidden="true"></span><span>Flagged</span>
-                        </div>
-                        <!-- Example alternatives:
-                            <div class="status status--forwarded"><span class="dot"></span><span>Forwarded</span></div>
-                            <div class="status status--flagged"><span class="dot"></span><span>Flagged</span></div>
-                            -->
-
-                        <div class="meta" aria-label="Date">
-                            <!-- clock -->
-                            <i class="fa-solid fa-clock"></i>
-                            <span>Aug&nbsp;4</span>
-                        </div>
-
-                        <button class="arrow-btn" type="button" aria-label="Toggle details">
-                            <!-- chevron down -->
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </button>
-                    </div>
-
-                </div>
-
-                <div class="msg__details" id="m1-details">
-                    <p class="details-text">
-                        Lorem ipsum dolor sit amet, has ea vidit dolorem voluptaria, ut sea delenit vivendum.
-                        Veri detraxit honestatis ei mel, paulo feugiat te has. Pri aeque aliquando tincidunt ei.
-                        Mentitum persequeris at his, democritum intellegam ex est, qui graece prodesset repudiandae.
-                    </p>
-                    <div class="actions">
-                        <button class="btn btn-tertiary" type="button">Flag as Abuse</button>
-                        <button class="btn btn-primary" type="button">Forward</button>
-                    </div>
-                </div>
-            </article>
-
-            <article class="msg" aria-expanded="false">
-                <div class="msg__head" role="button" aria-controls="m1-details" aria-expanded="false">
-                    <div class="avatar">E</div>
-
-                    <div class="text">
-                        <div class="to-line">to <b>Erik</b></div>
-                        <div class="subject">Preview of Subject</div>
-                        <div class="snippet">Lorem ipsum dolor sit amet, id sententiae intellegam ius, his et facer
-                            reformidans intellegabat…</div>
-                    </div>
-
-                    <div class="state">
-                        <div class="status status--forwarded" title="Forwarded">
-                            <span class="dot" aria-hidden="true"></span><span>Forwarded</span>
-                        </div>
-                        <!-- Example alternatives:
-                            <div class="status status--forwarded"><span class="dot"></span><span>Forwarded</span></div>
-                            <div class="status status--flagged"><span class="dot"></span><span>Flagged</span></div>
-                            -->
-
-                        <div class="meta" aria-label="Date">
-                            <!-- clock -->
-                            <i class="fa-solid fa-clock"></i>
-                            <span>Aug&nbsp;4</span>
-                        </div>
-
-                        <button class="arrow-btn" type="button" aria-label="Toggle details">
-                            <!-- chevron down -->
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </button>
-                    </div>
-
-                </div>
-
-                <div class="msg__details" id="m1-details">
-                    <p class="details-text">
-                        Lorem ipsum dolor sit amet, has ea vidit dolorem voluptaria, ut sea delenit vivendum.
-                        Veri detraxit honestatis ei mel, paulo feugiat te has. Pri aeque aliquando tincidunt ei.
-                        Mentitum persequeris at his, democritum intellegam ex est, qui graece prodesset repudiandae.
-                    </p>
-                    <div class="actions">
-                        <button class="btn btn-tertiary" type="button">Flag as Abuse</button>
-                        <button class="btn btn-primary" type="button">Forward</button>
+                        <button class="btn btn-tertiary" type="button" data-toggle="modal" data-target="#flagModal">Flag
+                            as Abuse</button>
+                        <button class="btn btn-primary" type="button" id="btnForward">Forward</button>
                     </div>
                 </div>
             </article>
