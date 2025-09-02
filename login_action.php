@@ -38,7 +38,7 @@ switch ($user['role']) {
         header('Location: hr-dash.php');
         break;
     case 'manager':
-        header('Location: manager-dash.php');
+        header('Location: manager_choice.php');
         break;
     case 'user':
     default:

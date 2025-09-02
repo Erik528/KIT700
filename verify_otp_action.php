@@ -10,7 +10,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 }
 
 $email = trim(strtolower($_POST['email'] ?? ($_SESSION['pending_email'] ?? '')));
-$code  = trim($_POST['otp'] ?? '');
+$code = trim($_POST['otp'] ?? '');
 
 if ($email === '' || $code === '') {
     header('Location: login.php?err=empty&email=' . urlencode($email));
@@ -38,7 +38,7 @@ if (!$token) {
     exit;
 }
 
-if ((int)$token['attempts'] >= 5) {
+if ((int) $token['attempts'] >= 5) {
     header('Location: login.php?err=locked&email=' . urlencode($email));
     exit;
 }
@@ -55,16 +55,24 @@ if (!$ok) {
 $pdo->prepare("DELETE FROM otp_tokens WHERE id=?")->execute([$token['id']]);
 
 session_regenerate_id(true);
-$_SESSION['user_id'] = (int)$user['id'];
-$_SESSION['email']   = $user['email'];
-$_SESSION['role']    = $user['role'];
+$_SESSION['user_id'] = (int) $user['id'];
+$_SESSION['email'] = $user['email'];
+$_SESSION['role'] = $user['role'];
 unset($_SESSION['pending_email']);
 
 
 switch ($_SESSION['role']) {
-    case 'admin':  header('Location: admin-dash.php');  break;
-    case 'coach':  header('Location: coach-dash.php');  break;
-    case 'manager':header('Location: manager-dash.php');break;
-    default:       header('Location: dashboard.php');   break;
+    case 'admin':
+        header('Location: admin-dash.php');
+        break;
+    case 'coach':
+        header('Location: coach-dash.php');
+        break;
+    case 'manager':
+        header('Location: manager_choice.php');
+        break;
+    default:
+        header('Location: dashboard.php');
+        break;
 }
 exit;
