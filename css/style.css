@@ -19,6 +19,14 @@ p {
     font-weight: 400;
 }
 
+.body .banner {
+    display: none;
+}
+
+.body .index-banner {
+    display: flex;
+}
+
 a {
     color: #6dc9af;
     text-decoration: none;
@@ -84,10 +92,7 @@ a:hover {
 
 .btn-outline {
     border: 1px solid #a1a1a1;
-    width: 100%;
-    letter-spacing: 0;
-    text-transform: capitalize;
-    padding: 0.7rem;
+    padding: 0.575rem 1.2rem;
     transition: .3s ease all;
 }
 
@@ -95,6 +100,12 @@ a:hover {
 .btn-outline:hover {
     background-color: #969595;
     color: #fff;
+}
+
+.modal .btn-outline {
+    width: 100%;
+    letter-spacing: 0;
+    text-transform: capitalize;
 }
 
 header {
@@ -202,6 +213,10 @@ header .navbar-toggler {
         margin-bottom: 1.5rem;
     }
 
+    .index-banner {
+        height: 87vh !important;
+    }
+
     .banner h1 {
         font-size: 1.875rem;
     }
@@ -210,6 +225,7 @@ header .navbar-toggler {
     p {
         font-size: 0.875rem;
     }
+
 }
 
 /* Padding Box Component*/
@@ -555,6 +571,13 @@ header .navbar-toggler {
     }
 }
 
+@media(max-width:575px) {
+    .actions .btn {
+        width: 100%;
+        margin-bottom: 0.5rem;
+    }
+}
+
 .card-inbox {
     border-radius: 12px
 }
@@ -612,3 +635,25 @@ header .navbar-toggler {
 }
 
 /* hide native checkbox text */
+
+#m1-accordion i {
+    transition: .3s ease all;
+}
+
+#m1-accordion .btn.btn-link {
+    text-align: left;
+    color: #1f2d3d;
+    text-decoration: none;
+}
+
+#m1-accordion .manager-option.active {
+    background: #eef5ff;
+}
+
+.fa-rotate-180 {
+    transform: rotate(180deg);
+}
+
+#m1-accordion .border-bottom.rounded {
+    border-bottom: 1px solid #dee2e6 !important;
+}

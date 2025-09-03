@@ -195,6 +195,95 @@ $(document).ready(function () {
         });
     });
 
+    //Affirmation sending back button 
+    $('#btnBack').on('click', function () {
+        $('#returnModal').modal('show');
+        $('#returnReason').trigger('input'); // refresh counter/validation
+    });
+
+    // Utility: count words (treat any non-empty whitespace-separated token as a word)
+    function countWords(str) {
+        return str.trim().split(/\s+/).filter(Boolean).length;
+    }
+
+    // Live counter + enable/disable Submit
+    $('#returnReason').on('input', function () {
+        var words = countWords($(this).val());
+        $('#wordCounter').text('( ' + words + '/100 )');
+        var valid = words > 0 && words <= 100;
+        $('#returnSubmit').prop('disabled', !valid);
+        $('#returnHint').toggleClass('d-none', valid);
+    });
+
+    // Reset
+    $('#returnReset').on('click', function () {
+        $('#returnReason').val('').trigger('input');
+    });
+
+    // Submit (client-side check + placeholder for server call)
+    $('#returnSubmit').on('click', function () {
+        var text = $('#returnReason').val();
+        var words = countWords(text);
+        if (words === 0 || words > 100) {
+            $('#returnHint').removeClass('d-none');
+            return;
+        }
+
+        // TODO: send to your server here (example AJAX):
+        // $.post('/return-message.php', { reason: text, message_id: 'm1' })
+        //   .done(function(){ /* show success / close modal */ })
+        //   .fail(function(){ /* show error */ });
+
+        // For now, just close and optionally show a toast/alert
+        $('#returnModal').modal('hide');
+    });
+
+    // Filter managers as you type
+    $('#m1-manager-filter').on('input', function () {
+        const q = $(this).val().toLowerCase();
+        $('#m1-manager-list .manager-option').each(function () {
+            const text = $(this).text().toLowerCase();
+            $(this).toggle(text.indexOf(q) !== -1);
+        });
+    });
+
+    // Choose a manager
+    $('#m1-manager-list').on('click', '.manager-option', function () {
+        const name = $(this).find('.font-weight-bold').text().trim();
+        const email = $(this).data('email');
+
+        // Optional: visual selection
+        $('#m1-manager-list .manager-option').removeClass('active');
+        $(this).addClass('active');
+
+        // Show selected pill
+        $('#m1-selected-name').text(name + ' (' + email + ')');
+        $('#m1-selected-manager').removeClass('d-none');
+
+        // TODO: Persist to backend (example):
+        // $.post('/assign-manager.php', { message_id: 'm1', manager_email: email })
+        //   .done(() => appendLog('Assigned to ' + name));
+        appendLog('Assigned to ' + name); // demo only
+    });
+
+    // Helper: append a log line
+    function appendLog(text) {
+        const now = new Date();
+        const stamp = now.toLocaleString('en-AU', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+            .replace(',', '');
+        $('#m1-log-list').prepend($('<li>').text(stamp + ' — ' + text));
+    }
+
+    // Optional: rotate chevron on open/close
+    $('#m1-accordion .btn[data-toggle="collapse"]').on('click', function () {
+        const icon = $(this).find('i.fa');
+        // Wait a tick so collapse can toggle expanded state
+        setTimeout(() => {
+            const expanded = $(this).attr('aria-expanded') === 'true';
+            icon.toggleClass('fa-rotate-180', !expanded);
+        }, 200);
+    });
+
 });
 
 //Submission Confirmation Modal
