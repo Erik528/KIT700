@@ -66,7 +66,8 @@
                 'manager-dash' => 'Manager Dashboard',
                 'staff-dash'   => 'Staff Dashboard',
                 'admin-dash'   => 'Admin Dashboard',
-                'login '       => 'Login Page'
+                'login '       => 'Login Page',
+                'hr-dash'   => 'HR Dashboard'
             ];
 
             if (isset($friendly[$filename])) {
