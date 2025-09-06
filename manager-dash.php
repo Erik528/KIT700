@@ -174,7 +174,7 @@ include 'header.php';
                                     <?= htmlspecialchars($row['recipient_email']) ?>
                                 </span>
 
-                                <div class="status <?= $statusClass ?>" title="<?= ucfirst($status) ?>">
+                                <div class="status status-pill <?= $statusClass ?>" title="<?= ucfirst($status) ?>">
                                     <span class="dot" aria-hidden="true"></span><span><?= ucfirst($status) ?></span>
                                 </div>
                             </div>
@@ -371,6 +371,28 @@ include 'header.php';
     /* Visual styles (spacing & components) */
     (function () {
         var css = `
+    .text .to-line .status-pill{
+    margin-left:12px;
+    display:flex; align-items:center; gap:8px; white-space:nowrap;
+    padding:6px 12px; border-radius:999px; border:1px solid rgba(0,0,0,0.06); background:#fff;
+    color:#374151;
+    }
+    .text .to-line .status-pill .dot{ width:10px; height:10px; border-radius:50%; flex:0 0 10px; }
+    .text .to-line .status-pill span{ display:inline-block; line-height:1; }
+
+    .state .status-pill{
+    display:flex; align-items:center; gap:8px; white-space:nowrap;
+    padding:6px 14px; border-radius:999px; border:1px solid rgba(0,0,0,0.06); background:#fff;
+    color:#374151;
+    }
+    .state .status-pill .dot{ width:10px; height:10px; border-radius:50%; flex:0 0 10px; }
+    .state .status-pill span{ display:inline-block; line-height:1; }
+
+    .status--unread .dot{ background:#FFC107; }
+    .status--forwarded .dot{ background:#1976D2; }
+    .status--flagged .dot{ background:#E53935; }
+    .status--read .dot{ background:#6c757d; }
+
     .msg{ border-radius:14px; box-shadow:0 6px 18px rgba(0,0,0,.06); background:#fff; margin-bottom:22px; overflow:hidden; }
     .msg__head{ display:flex; align-items:flex-start; gap:22px; padding:22px 28px; }
     .msg__details{ display:none; padding:22px 28px; border-top:1px solid rgba(0,0,0,.08); }
@@ -404,6 +426,8 @@ include 'header.php';
     .snippet{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:#343a40; }
     .msg[aria-expanded="true"] .snippet{ display:none; }
     .details-text{ overflow-wrap:anywhere; word-break:break-word; white-space:pre-wrap; }
+
+
 
     .state{ display:flex; align-items:center; gap:16px; margin-left:auto; }
     .state .meta{ white-space:nowrap; color:#6b7280; }
@@ -473,43 +497,44 @@ include 'header.php';
         document.getElementById('delAid').value = aid || '';
     });
 
-    /* Expand/collapse + safe mark_read (client-side gate) */
+    /* Expand/collapse + safe mark_read (robust) */
     (function () {
         var inbox = document.querySelector('.inbox'); if (!inbox) return;
 
         inbox.addEventListener('click', function (e) {
-            var btn = e.target.closest('.arrow-btn'); if (!btn) return;
-            var msg = btn.closest('.msg');
+            var clickTarget = e.target.closest('.arrow-btn, .msg__head');
+            if (!clickTarget) return;
+
+            var msg = clickTarget.closest('.msg'); if (!msg) return;
             var details = msg.querySelector('.msg__details');
-            var expanded = msg.getAttribute('aria-expanded') === 'true';
+            var wasOpen = msg.getAttribute('aria-expanded') === 'true';
+            var nowOpen = !wasOpen;
 
-            msg.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-            btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
-            details.style.display = expanded ? 'none' : 'block';
+            msg.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+            if (details) details.style.display = nowOpen ? 'block' : 'none';
 
-            var icon = btn.querySelector('i');
-            if (icon) {
-                icon.classList.toggle('fa-chevron-down', expanded === true);
-                icon.classList.toggle('fa-chevron-up', expanded !== true);
-            }
+            var arrowBtn = msg.querySelector('.arrow-btn');
+            if (arrowBtn) arrowBtn.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
 
-            // Only send mark_read if current status is exactly 'unread'
             var cur = (msg.dataset.status || '').toLowerCase();
-            if (!expanded && cur === 'unread') {
+            if (nowOpen && cur === 'unread') {
                 var aid = msg.getAttribute('data-aid');
                 fetch('manager-dash.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                     body: 'action=mark_read&affirmation_id=' + encodeURIComponent(aid)
                 }).then(function () {
+                    // 本地 UI 同步
                     msg.dataset.status = 'read';
-                    var status = msg.querySelector('.status');
-                    if (status && status.classList.contains('status--unread')) {
-                        status.classList.remove('status--unread');
-                        status.classList.add('status--read');
-                        var text = status.querySelector('span:last-child'); if (text) text.textContent = 'Read';
+
+                    var pill = msg.querySelector('.status-pill') || msg.querySelector('.status');
+                    if (pill) {
+                        pill.classList.remove('status--unread');
+                        pill.classList.add('status--read');
+                        var text = pill.querySelector('span:last-child');
+                        if (text) text.textContent = 'Read';
                     }
-                });
+                }).catch(function () { });
             }
         });
 
