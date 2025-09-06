@@ -165,18 +165,25 @@ include 'header.php';
                         <div class="avatar"><?= strtoupper(substr($row['sender_email'], 0, 1)) ?></div>
 
                         <div class="text">
-                            <div class="to-line">to <span><?= htmlspecialchars($row['recipient_email']) ?></span>
+                            <div class="to-line">
+                                <span class="from" title="<?= htmlspecialchars($row['sender_email']) ?>">
+                                    <?= htmlspecialchars($row['sender_email']) ?>
+                                </span>
+                                <span class="sep" aria-hidden="true">→</span>
+                                <span class="to" title="<?= htmlspecialchars($row['recipient_email']) ?>">
+                                    <?= htmlspecialchars($row['recipient_email']) ?>
+                                </span>
+
                                 <div class="status <?= $statusClass ?>" title="<?= ucfirst($status) ?>">
                                     <span class="dot" aria-hidden="true"></span><span><?= ucfirst($status) ?></span>
                                 </div>
                             </div>
+
                             <div class="subject"><?= htmlspecialchars($row['subject']) ?></div>
                             <div class="snippet"><?= htmlspecialchars(mb_strimwidth($row['message'], 0, 160, '…')) ?></div>
                         </div>
 
                         <div class="state">
-
-
                             <div class="meta" aria-label="Date">
                                 <i class="fa-solid fa-clock"></i>
                                 <span><?= date('M d', strtotime($row['submitted_at'])) ?></span>
@@ -185,7 +192,6 @@ include 'header.php';
                             <!-- Gray trash icon -> opens Confirm Delete modal -->
                             <button type="button" class="icon-trash" title="Delete" data-toggle="modal"
                                 data-target="#confirmDelete" data-aid="<?= $aid ?>" aria-label="Delete this message">
-                                <!-- inline SVG, no Font Awesome needed -->
                                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="trash-svg">
                                     <path
                                         d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1.1l-1.1 12.1A3 3 0 0 1 14.81 23H9.19a3 3 0 0 1-2.99-2.9L5.1 7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1Zm1 2h4V4h-4v1Zm-2.9 2 1 11.1a1 1 0 0 0 .99.9h5.62a1 1 0 0 0 .99-.9L16.9 7H7.1ZM10 9a1 1 0 0 1 1 1v7a1 1 0 1 1-2 0v-7a1 1 0 0 1 1-1Zm4 0a1 1 0 0 1 1 1v7a1 1 0 1 1-2 0v-7a1 1 0 0 1 1-1Z" />
@@ -195,8 +201,6 @@ include 'header.php';
                             <button class="arrow-btn" type="button" aria-label="Toggle details" aria-expanded="false">
                                 <i class="fa-solid fa-chevron-down"></i>
                             </button>
-
-
                         </div>
                     </div>
 
@@ -371,8 +375,30 @@ include 'header.php';
     .msg__head{ display:flex; align-items:flex-start; gap:22px; padding:22px 28px; }
     .msg__details{ display:none; padding:22px 28px; border-top:1px solid rgba(0,0,0,.08); }
     .avatar{ width:56px; height:56px; border-radius:999px; background:#e9ecef; display:flex; align-items:center; justify-content:center; font-weight:700; color:#5f6368; }
-    .text .to-line{ color:#5f6368; margin-bottom:2px; }
-    .text .to-line b, .text .to-line span{ font-weight:400; } /* keep recipient regular */
+
+    /* text container can shrink/grow safely */
+    .msg__head .text{ flex:1; min-width:0; }
+
+    /* Address line layout */
+    .text .to-line{
+      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+      line-height:1.25; min-width:0; color:#5f6368; margin-bottom:2px;
+    }
+    .text .to-line .from, .text .to-line .to{
+      max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .text .to-line .from{ color:#6b7280; font-weight:600; }  /* sender: gray semibold */
+    .text .to-line .to{ color:#111; font-weight:700; }       /* recipient: dark bold */
+    .text .to-line .sep{ opacity:.45; margin:0 2px; }
+
+    /* status pill inside to-line, with spacing */
+    .text .to-line .status{
+      margin-left:12px;
+      display:flex; align-items:center; gap:8px; white-space:nowrap;
+      padding:6px 12px; border-radius:999px; border:1px solid rgba(0,0,0,0.06); background:#fff;
+    }
+    .text .to-line .status .dot{ width:10px; height:10px; border-radius:50%; flex:0 0 10px; }
+
     .text .subject{ font-weight:400; font-size:1.25rem; line-height:1.25; margin-bottom:4px; }
     @media (min-width:992px){ .text .subject{ font-size:1.3125rem; } }
     .snippet{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:#343a40; }
@@ -411,7 +437,6 @@ include 'header.php';
     .actions .btn-forward { background:#f2f3f5; border:1px solid #d7dbe0; color:#0d47a1; }
     .actions .btn-forward:hover { background:#0d47a1; border-color:#0d47a1; color:#fff; }
 
-    /* gray trash icon next to date */
     .icon-trash{ background:none; border:0; padding:0 6px; color:#9aa0a6; line-height:1; }
     .icon-trash:hover{ color:#6b7280; }
     .icon-trash .trash-svg{ width:18px; height:18px; fill:currentColor; display:block; }
