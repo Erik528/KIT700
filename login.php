@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 session_start();
 
@@ -18,7 +19,7 @@ if (empty($_SESSION['csrf'])) {
 }
 ?>
 <script>
-    (function () {
+    (function() {
         const err = <?= json_encode($err) ?>;
         const ok = <?= json_encode($ok) ?>;
         const email = <?= json_encode($email) ?>;
@@ -49,11 +50,6 @@ if (empty($_SESSION['csrf'])) {
 <?php include 'header.php'; ?>
 
 <div class="body">
-    <div class="banner">
-        <div class="container">
-            <h1>Sign In</h1>
-        </div>
-    </div>
 
     <div class="container">
         <div class="sign-in py-3 py-lg-5">
@@ -192,7 +188,7 @@ $resendEmail = $email ?: ($_SESSION['pending_email'] ?? '');
 </style>
 
 <script>
-    (function () {
+    (function() {
         const modal = document.getElementById('otpModal');
         const openBtn = document.getElementById('open-verify-modal');
         const closeBtn = document.getElementById('otpModalClose');
@@ -203,6 +199,7 @@ $resendEmail = $email ?: ($_SESSION['pending_email'] ?? '');
             modal.setAttribute('aria-hidden', 'false');
             setTimeout(() => otpInput && otpInput.focus(), 60);
         }
+
         function closeModal() {
             if (!modal) return;
             modal.setAttribute('aria-hidden', 'true');
