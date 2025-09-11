@@ -56,24 +56,27 @@ $staffList = $staffStmt->fetchAll();
 <div class="container py-5">
     <div class="row">
         <!-- Left Column: Affirmation History -->
-        <div class="col-lg-7">
-            <h5>Affirmation History</h5>
+        <div class="col-lg-7 order-2 order-lg-1">
+            <div class="aff-content">
+                <!-- Button to trigger modal -->
+                <button class="btn btn-primary mb-3" data-toggle="modal" data-target="#affirmationModal">New
+                    Affirmation</button>
+                <h5>Affirmation History</h5>
 
-            <?php if (!empty($affirmations)): ?>
-                <?php foreach ($affirmations as $row): ?>
-                    <div class="affirmation mb-3 p-2 border">
-                        <strong>Sent to:</strong> <?= htmlspecialchars($row['recipient_email']) ?><br>
-                        <strong>Subject:</strong> <?= htmlspecialchars($row['subject']) ?><br>
-                        <p><?= htmlspecialchars($row['message']) ?></p>
-                        <small><?= date('M d, Y H:i', strtotime($row['submitted_at'])) ?></small>
-                    </div>
-                <?php endforeach; ?>
-            <?php else: ?>
-                <p>No affirmations sent yet.</p>
-            <?php endif; ?>
+                <?php if (!empty($affirmations)): ?>
+                    <?php foreach ($affirmations as $row): ?>
+                        <div class="affirmation mb-3 p-2 border">
+                            <strong>Sent to:</strong> <?= htmlspecialchars($row['recipient_email']) ?><br>
+                            <strong>Subject:</strong> <?= htmlspecialchars($row['subject']) ?><br>
+                            <p><?= htmlspecialchars($row['message']) ?></p>
+                            <small><?= date('M d, Y H:i', strtotime($row['submitted_at'])) ?></small>
+                        </div>
+                    <?php endforeach; ?>
+                <?php else: ?>
+                    <p>No affirmations sent yet.</p>
+                <?php endif; ?>
 
-            <!-- Button to trigger modal -->
-            <button class="btn btn-primary mt-3" data-toggle="modal" data-target="#affirmationModal">New Affirmation</button>
+            </div>
 
             <!-- Modal Form -->
             <div class="modal fade" id="affirmationModal" tabindex="-1" role="dialog">
@@ -89,17 +92,20 @@ $staffList = $staffStmt->fetchAll();
                                     <label>Recipient</label>
                                     <select name="recipient_id" class="form-control" required>
                                         <?php foreach ($staffList as $staff): ?>
-                                            <option value="<?= $staff['id'] ?>"><?= htmlspecialchars($staff['email']) ?></option>
+                                            <option value="<?= $staff['id'] ?>"><?= htmlspecialchars($staff['email']) ?>
+                                            </option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
                                 <div class="form-group">
                                     <label>Subject</label>
-                                    <input type="text" name="subject" class="form-control" placeholder="Subject" required>
+                                    <input type="text" name="subject" class="form-control" placeholder="Subject"
+                                        required>
                                 </div>
                                 <div class="form-group">
                                     <label>Message</label>
-                                    <textarea name="message" class="form-control" rows="3" placeholder="Write your message" required></textarea>
+                                    <textarea name="message" class="form-control" rows="3"
+                                        placeholder="Write your message" required></textarea>
                                 </div>
                             </div>
                             <div class="modal-footer">
@@ -114,29 +120,31 @@ $staffList = $staffStmt->fetchAll();
         </div>
 
         <!-- Right Column: Current Cycle -->
-        <div class="col-lg-5">
-            <h5>Current Cycle</h5>
-            <p>Status: <?= ($currentCycle['is_active'] ?? 0) ? 'OPEN' : 'CLOSED' ?></p>
+        <div class="col-lg-5 mb-4 mb-lg-0 order-1 order-lg-2">
+            <div class="cycle open">
+                <h5>Current Cycle</h5>
+                <p>Status: <?= ($currentCycle['is_active'] ?? 0) ? 'OPEN' : 'CLOSED' ?></p>
 
-            <?php if ($cycle_id): ?>
-                <?php
-                $start = strtotime($currentCycle['start_date']);
-                $end = strtotime($currentCycle['end_date']);
-                $now = time();
-                $progress = $now > $end ? 100 : (($now - $start)/($end - $start) * 100);
-                $progress = max(0, min(100, $progress));
-                $remaining = max(0, $end - $now);
-                $days = floor($remaining / 86400);
-                $hours = floor(($remaining % 86400)/3600);
-                $minutes = floor(($remaining % 3600)/60);
-                ?>
-                <div class="progress mb-2">
-                    <div class="progress-bar bg-info" style="width: <?= $progress ?>%;"></div>
-                </div>
-                <p>Time Remaining: <?= $days ?>d <?= $hours ?>h <?= $minutes ?>m</p>
-            <?php else: ?>
-                <p>No active cycle</p>
-            <?php endif; ?>
+                <?php if ($cycle_id): ?>
+                    <?php
+                    $start = strtotime($currentCycle['start_date']);
+                    $end = strtotime($currentCycle['end_date']);
+                    $now = time();
+                    $progress = $now > $end ? 100 : (($now - $start) / ($end - $start) * 100);
+                    $progress = max(0, min(100, $progress));
+                    $remaining = max(0, $end - $now);
+                    $days = floor($remaining / 86400);
+                    $hours = floor(($remaining % 86400) / 3600);
+                    $minutes = floor(($remaining % 3600) / 60);
+                    ?>
+                    <div class="progress mb-2">
+                        <div class="progress-bar bg-info" style="width: <?= $progress ?>%;"></div>
+                    </div>
+                    <p>Time Remaining: <?= $days ?>d <?= $hours ?>h <?= $minutes ?>m</p>
+                <?php else: ?>
+                    <p>No active cycle</p>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
 </div>
