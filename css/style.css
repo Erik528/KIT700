@@ -297,6 +297,7 @@ header .navbar-toggler {
     word-break: break-word;
     margin-bottom: 0.6rem;
     background-color: #fff;
+    padding: 1rem;
 }
 
 .affirmation img {
@@ -315,6 +316,10 @@ header .navbar-toggler {
 }
 
 @media(max-width:1199px) {
+    .affirmation {
+        padding: 0.7rem;
+    }
+
     .aff-content {
         padding: 1rem;
     }
