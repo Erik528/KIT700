@@ -145,7 +145,7 @@ include 'header.php';
             <div class="small text-muted mb-3">
                 Team:
                 <?php foreach ($teamMembers as $i => $m): ?>
-                    <?= $i > 0 ? ' , ' : '' ?>         <?= htmlspecialchars($m['email']) ?>
+                    <?= $i > 0 ? ' , ' : '' ?> <?= htmlspecialchars($m['email']) ?>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
@@ -158,7 +158,7 @@ include 'header.php';
                 $aid = (int) $row['affirmation_id'];
                 $status = strtolower($row['status'] ?: 'unread');
                 $statusClass = 'status--' . $status;
-                ?>
+            ?>
                 <article class="msg" data-aid="<?= $aid ?>" data-status="<?= htmlspecialchars($status) ?>"
                     aria-expanded="false">
                     <div class="msg__head" role="button" aria-controls="msg-<?= $aid ?>-details" aria-expanded="false">
@@ -215,7 +215,7 @@ include 'header.php';
 
                         <div class="actions">
                             <!-- Yellow -->
-                            <button class="btn btn-warning btn-lg action-flag" type="button" data-toggle="modal"
+                            <button class="btn btn-warning action-flag" type="button" data-toggle="modal"
                                 data-target="#flagModal" data-aid="<?= $aid ?>">
                                 Flag as Abuse
                             </button>
@@ -224,7 +224,7 @@ include 'header.php';
                             <form method="POST" class="d-inline">
                                 <input type="hidden" name="action" value="forward">
                                 <input type="hidden" name="affirmation_id" value="<?= $aid ?>">
-                                <button type="submit" class="btn btn-lg btn-forward">
+                                <button type="submit" class="btn btn-secondary btn-forward">
                                     Forward
                                 </button>
                             </form>
@@ -368,109 +368,9 @@ include 'header.php';
 <?php include 'footer.php'; ?>
 
 <script>
-    /* Visual styles (spacing & components) */
-    (function () {
-        var css = `
-    .text .to-line .status-pill{
-    margin-left:12px;
-    display:flex; align-items:center; gap:8px; white-space:nowrap;
-    padding:6px 12px; border-radius:999px; border:1px solid rgba(0,0,0,0.06); background:#fff;
-    color:#374151;
-    }
-    .text .to-line .status-pill .dot{ width:10px; height:10px; border-radius:50%; flex:0 0 10px; }
-    .text .to-line .status-pill span{ display:inline-block; line-height:1; }
-
-    .state .status-pill{
-    display:flex; align-items:center; gap:8px; white-space:nowrap;
-    padding:6px 14px; border-radius:999px; border:1px solid rgba(0,0,0,0.06); background:#fff;
-    color:#374151;
-    }
-    .state .status-pill .dot{ width:10px; height:10px; border-radius:50%; flex:0 0 10px; }
-    .state .status-pill span{ display:inline-block; line-height:1; }
-
-    .status--unread .dot{ background:#FFC107; }
-    .status--forwarded .dot{ background:#1976D2; }
-    .status--flagged .dot{ background:#E53935; }
-    .status--read .dot{ background:#6c757d; }
-
-    .msg{ border-radius:14px; box-shadow:0 6px 18px rgba(0,0,0,.06); background:#fff; margin-bottom:22px; overflow:hidden; }
-    .msg__head{ display:flex; align-items:flex-start; gap:22px; padding:22px 28px; }
-    .msg__details{ display:none; padding:22px 28px; border-top:1px solid rgba(0,0,0,.08); }
-    .avatar{ width:56px; height:56px; border-radius:999px; background:#e9ecef; display:flex; align-items:center; justify-content:center; font-weight:700; color:#5f6368; }
-
-    /* text container can shrink/grow safely */
-    .msg__head .text{ flex:1; min-width:0; }
-
-    /* Address line layout */
-    .text .to-line{
-      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-      line-height:1.25; min-width:0; color:#5f6368; margin-bottom:2px;
-    }
-    .text .to-line .from, .text .to-line .to{
-      max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-    }
-    .text .to-line .from{ color:#6b7280; font-weight:600; }  /* sender: gray semibold */
-    .text .to-line .to{ color:#111; font-weight:700; }       /* recipient: dark bold */
-    .text .to-line .sep{ opacity:.45; margin:0 2px; }
-
-    /* status pill inside to-line, with spacing */
-    .text .to-line .status{
-      margin-left:12px;
-      display:flex; align-items:center; gap:8px; white-space:nowrap;
-      padding:6px 12px; border-radius:999px; border:1px solid rgba(0,0,0,0.06); background:#fff;
-    }
-    .text .to-line .status .dot{ width:10px; height:10px; border-radius:50%; flex:0 0 10px; }
-
-    .text .subject{ font-weight:400; font-size:1.25rem; line-height:1.25; margin-bottom:4px; }
-    @media (min-width:992px){ .text .subject{ font-size:1.3125rem; } }
-    .snippet{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:#343a40; }
-    .msg[aria-expanded="true"] .snippet{ display:none; }
-    .details-text{ overflow-wrap:anywhere; word-break:break-word; white-space:pre-wrap; }
-
-
-
-    .state{ display:flex; align-items:center; gap:16px; margin-left:auto; }
-    .state .meta{ white-space:nowrap; color:#6b7280; }
-    .state .arrow-btn{ padding:0 6px; }
-
-    .state .status{ display:flex; align-items:center; gap:8px; white-space:nowrap; padding:6px 14px; border-radius:999px; border:1px solid rgba(0,0,0,0.06); background:#fff; }
-    .state .status .dot{ width:10px; height:10px; border-radius:50%; flex:0 0 10px; }
-    .state .status span{ display:inline-block; line-height:1; }
-    .status--unread .dot{ background:#FFC107; }
-    .status--forwarded .dot{ background:#1976D2; }
-    .status--flagged .dot{ background:#E53935; }
-    .status--read .dot{ background:#6c757d; }
-
-    .bar-yellow{ background:#ffc107; }
-    .bar-blue{ background:#007bff; }
-    .bar-dark{ background:#343a40; }
-
-    .actions{ display:flex; gap:14px; }
-    .actions .btn {
-      border-radius: 0;
-      text-transform: uppercase;
-      font-weight: 400;
-      letter-spacing: .05em;
-      font-size: 1rem;
-      padding: 0.75rem 1.5rem;
-      min-width: 160px;
-    }
-    .actions .btn-warning { background:#ffc107; border:none; color:#111; }
-    .actions .btn-warning:hover { background:#e0ad06; color:#111; }
-
-    .actions .btn-forward { background:#f2f3f5; border:1px solid #d7dbe0; color:#0d47a1; }
-    .actions .btn-forward:hover { background:#0d47a1; border-color:#0d47a1; color:#fff; }
-
-    .icon-trash{ background:none; border:0; padding:0 6px; color:#9aa0a6; line-height:1; }
-    .icon-trash:hover{ color:#6b7280; }
-    .icon-trash .trash-svg{ width:18px; height:18px; fill:currentColor; display:block; }
-  `;
-        var s = document.createElement('style'); s.textContent = css; document.head.appendChild(s);
-    })();
-
     /* Flag modal wiring */
-    (function () {
-        $('#flagModal').on('show.bs.modal', function (ev) {
+    (function() {
+        $('#flagModal').on('show.bs.modal', function(ev) {
             var btn = ev.relatedTarget;
             var aid = btn && btn.getAttribute('data-aid');
             document.getElementById('flagAid').value = aid || '';
@@ -478,34 +378,42 @@ include 'header.php';
             document.getElementById('flagHint').classList.add('d-none');
         });
 
-        document.getElementById('flagForm').addEventListener('submit', function (e) {
+        document.getElementById('flagForm').addEventListener('submit', function(e) {
             var checks = Array.from(document.querySelectorAll('#reasonsGroup input[type=checkbox]:checked'));
-            if (!checks.length) { e.preventDefault(); document.getElementById('flagHint').classList.remove('d-none'); return false; }
-            document.getElementById('flagReasons').value = checks.map(function (c) { return c.value; }).join(', ');
+            if (!checks.length) {
+                e.preventDefault();
+                document.getElementById('flagHint').classList.remove('d-none');
+                return false;
+            }
+            document.getElementById('flagReasons').value = checks.map(function(c) {
+                return c.value;
+            }).join(', ');
         });
 
-        document.getElementById('btnReset').addEventListener('click', function () {
+        document.getElementById('btnReset').addEventListener('click', function() {
             $('#reasonsGroup input[type=checkbox]').prop('checked', false).parent().removeClass('active');
             document.getElementById('flagHint').classList.add('d-none');
         });
     })();
 
     /* Confirm Delete modal: inject current AID */
-    $('#confirmDelete').on('show.bs.modal', function (ev) {
+    $('#confirmDelete').on('show.bs.modal', function(ev) {
         var btn = ev.relatedTarget;
         var aid = btn && btn.getAttribute('data-aid');
         document.getElementById('delAid').value = aid || '';
     });
 
     /* Expand/collapse + safe mark_read (robust) */
-    (function () {
-        var inbox = document.querySelector('.inbox'); if (!inbox) return;
+    (function() {
+        var inbox = document.querySelector('.inbox');
+        if (!inbox) return;
 
-        inbox.addEventListener('click', function (e) {
+        inbox.addEventListener('click', function(e) {
             var clickTarget = e.target.closest('.arrow-btn, .msg__head');
             if (!clickTarget) return;
 
-            var msg = clickTarget.closest('.msg'); if (!msg) return;
+            var msg = clickTarget.closest('.msg');
+            if (!msg) return;
             var details = msg.querySelector('.msg__details');
             var wasOpen = msg.getAttribute('aria-expanded') === 'true';
             var nowOpen = !wasOpen;
@@ -521,9 +429,11 @@ include 'header.php';
                 var aid = msg.getAttribute('data-aid');
                 fetch('manager-dash.php', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
                     body: 'action=mark_read&affirmation_id=' + encodeURIComponent(aid)
-                }).then(function () {
+                }).then(function() {
                     // 本地 UI 同步
                     msg.dataset.status = 'read';
 
@@ -534,15 +444,21 @@ include 'header.php';
                         var text = pill.querySelector('span:last-child');
                         if (text) text.textContent = 'Read';
                     }
-                }).catch(function () { });
+                }).catch(function() {});
             }
         });
 
         // Success/error modals + clear the query string to avoid repeat on refresh
         var params = new URLSearchParams(location.search);
-        if (params.get('ok') === 'forwarded') { $('#forwardModal').modal('show'); }
-        if (params.get('ok') === 'flagged') { $('#reportedModal').modal('show'); }
-        if (params.get('err') === 'locked') { $('#lockedModal').modal('show'); }
+        if (params.get('ok') === 'forwarded') {
+            $('#forwardModal').modal('show');
+        }
+        if (params.get('ok') === 'flagged') {
+            $('#reportedModal').modal('show');
+        }
+        if (params.get('err') === 'locked') {
+            $('#lockedModal').modal('show');
+        }
         if (params.has('ok') || params.has('err')) {
             window.history.replaceState({}, '', 'manager-dash.php');
         }

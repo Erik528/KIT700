@@ -1,4 +1,5 @@
 <?php
+
 declare(strict_types=1);
 session_start();
 
@@ -38,7 +39,7 @@ if (empty($_SESSION['csrf'])) {
 $otpEnabled = (defined('OTP_ENABLED') && OTP_ENABLED === true);
 ?>
 <script>
-    (function () {
+    (function() {
         const err = <?= json_encode($err) ?>;
         const ok = <?= json_encode($ok) ?>;
         const email = <?= json_encode($email) ?>;
@@ -145,6 +146,8 @@ $otpEnabled = (defined('OTP_ENABLED') && OTP_ENABLED === true);
     </div><!-- /.container -->
 </div>
 
+
+
 <?php
 $resendEmail = $email ?: ($_SESSION['pending_email'] ?? '');
 ?>
@@ -214,9 +217,9 @@ $resendEmail = $email ?: ($_SESSION['pending_email'] ?? '');
 </style>
 
 <script>
-    (function () {
+    (function() {
         const OTP_ENABLED = <?= $otpEnabled ? 'true' : 'false' ?>;
-        if (!OTP_ENABLED) return;  
+        if (!OTP_ENABLED) return;
 
         const modal = document.getElementById('otpModal');
         const openBtn = document.getElementById('open-verify-modal');
@@ -228,6 +231,7 @@ $resendEmail = $email ?: ($_SESSION['pending_email'] ?? '');
             modal.setAttribute('aria-hidden', 'false');
             setTimeout(() => otpInput && otpInput.focus(), 60);
         }
+
         function closeModal() {
             if (!modal) return;
             modal.setAttribute('aria-hidden', 'true');
@@ -235,7 +239,9 @@ $resendEmail = $email ?: ($_SESSION['pending_email'] ?? '');
 
         openBtn && openBtn.addEventListener('click', openModal);
         closeBtn && closeBtn.addEventListener('click', closeModal);
-        modal && modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+        modal && modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeModal();
+        });
 
         const ok = <?= json_encode($ok) ?>;
         const err = <?= json_encode($err) ?>;
