@@ -1,61 +1,4 @@
 <?php
-// hr-dash.php
-declare(strict_types=1);
-session_start();
-require 'db_connection.php';
-
-// --- Guard: only HR can access
-if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'hr') {
-    header('Location: login.php?err=unauthorized');
-    exit;
-}
-$hrId = (int) $_SESSION['user_id'];
-
-// --- Actions: mark_read / flag / delete
-$action = $_POST['action'] ?? '';
-if ($action) {
-    $aid = (int) ($_POST['affirmation_id'] ?? 0);
-    if ($aid <= 0) { http_response_code(400); exit('Bad Request'); }
-
-    // Fetch affirmation to ensure it belongs to this HR
-    $st = $pdo->prepare("SELECT status FROM affirmations WHERE affirmation_id=:aid AND recipient_id=:hr");
-    $st->execute(['aid'=>$aid,'hr'=>$hrId]);
-    $msg = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$msg) { http_response_code(403); exit('Forbidden'); }
-
-    $status = strtolower((string)$msg['status'] ?? 'unread');
-
-    if ($action === 'mark_read' && $status==='unread') {
-        $pdo->prepare("UPDATE affirmations SET status='read' WHERE affirmation_id=:aid")->execute(['aid'=>$aid]);
-        exit('OK');
-    }
-
-    if ($action === 'flag' && $status!=='flagged' && $status!=='forwarded') {
-        $reason = trim($_POST['reasons'] ?? '') ?: null;
-        $pdo->prepare("UPDATE affirmations SET status='flagged', flag_reason=:r WHERE affirmation_id=:aid")
-            ->execute(['aid'=>$aid,'r'=>$reason]);
-        header('Location: hr-dash.php?ok=flagged');
-        exit;
-    }
-
-    if ($action === 'delete') {
-        $pdo->prepare("DELETE FROM affirmations WHERE affirmation_id=:aid")->execute(['aid'=>$aid]);
-        header('Location: hr-dash.php?ok=deleted');
-        exit;
-    }
-}
-
-// --- Fetch affirmations for this HR
-$st = $pdo->prepare("
-    SELECT a.*, u.email AS sender_email
-    FROM affirmations a
-    JOIN users u ON u.id = a.sender_id
-    WHERE a.recipient_id=:hr
-    ORDER BY a.submitted_at DESC
-");
-$st->execute(['hr'=>$hrId]);
-$messages = $st->fetchAll(PDO::FETCH_ASSOC);
-
 include 'header.php';
 ?>
 
@@ -71,7 +14,11 @@ include 'header.php';
                 <div class="msg__head" role="button" aria-controls="msg-<?= $aid ?>-details" aria-expanded="false">
                     <div class="avatar"><?= strtoupper(substr($msg['sender_email'],0,1)) ?></div>
                     <div class="text">
-                        <div class="to-line">to <b><?= htmlspecialchars($_SESSION['email'] ?? 'HR') ?></b></div>
+                        <div class="to-line">
+                            <span class="from"><?= htmlspecialchars($msg['sender_email']) ?></span>
+                            <span class="sep">→</span>
+                            <span class="to"><?= htmlspecialchars($msg['recipient_email']) ?></span>
+                        </div>
                         <div class="subject"><?= htmlspecialchars($msg['subject'] ?? 'No Subject') ?></div>
                         <div class="snippet"><?= htmlspecialchars(mb_strimwidth($msg['message'] ?? '',0,160,'…')) ?></div>
                     </div>
@@ -99,17 +46,16 @@ include 'header.php';
                     <?php endif; ?>
 
                     <div class="actions">
-                        <form method="post" style="display:inline">
-                            <input type="hidden" name="action" value="flag">
-                            <input type="hidden" name="affirmation_id" value="<?= $aid ?>">
-                            <button class="btn btn-warning btn-lg" type="submit">Flag as Abuse</button>
-                        </form>
+                        <button class="btn btn-warning btn-lg action-flag" type="button" data-toggle="modal" data-target="#flagModal" data-aid="<?= $aid ?>">Flag as Abuse</button>
                     </div>
                 </div>
             </article>
             <?php endforeach; ?>
         </div>
     </div>
+
+    <!-- Reuse modals (flagModal, confirmDelete, etc.) same as in manager-dash -->
+
     <!--/.Popup Modals -->
     <!-- Flag as Abuse (reasons) -->
     <div class="modal fade" id="flagModal" tabindex="-1" aria-hidden="true">
@@ -276,39 +222,3 @@ include 'header.php';
         </div>
     </div>
     <?php include 'footer.php'; ?>
-
-<script>
-(function() {
-    var inbox = document.querySelector('.inbox');
-    if(!inbox) return;
-    inbox.addEventListener('click', function(e) {
-        var clickTarget = e.target.closest('.arrow-btn, .msg__head');
-        if(!clickTarget) return;
-        var msg = clickTarget.closest('.msg');
-        if(!msg) return;
-        var details = msg.querySelector('.msg__details');
-        var open = msg.getAttribute('aria-expanded')==='true';
-        msg.setAttribute('aria-expanded', open ? 'false' : 'true');
-        if(details) details.style.display = open ? 'none' : 'block';
-
-        // mark read
-        if(!open && msg.dataset.status==='unread') {
-            var aid = msg.dataset.aid;
-            fetch('hr-dash.php', {
-                method:'POST',
-                headers:{'Content-Type':'application/x-www-form-urlencoded'},
-                body:'action=mark_read&affirmation_id='+encodeURIComponent(aid)
-            }).then(()=>{ msg.dataset.status='read';
-                var pill = msg.querySelector('.status-pill')||msg.querySelector('.status');
-                if(pill){ pill.classList.remove('status--unread'); pill.classList.add('status--read'); pill.querySelector('span:last-child').textContent='Read'; }
-            });
-        }
-    });
-
-    // success modals
-    var params = new URLSearchParams(location.search);
-    if(params.get('ok')==='flagged') $('#reportedModal').modal('show');
-    if(params.get('ok')==='deleted') $('#deletedModal').modal('show');
-    if(params.has('ok')||params.has('err')) window.history.replaceState({}, '', 'hr-dash.php');
-})();
-</script>
