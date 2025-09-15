@@ -36,10 +36,10 @@ try {
         ");
     }
 } catch (Throwable $e) {
-    // keep page running; optionally log the error
+    // keep page running
 }
 
-/* Guard helper: affirmation must belong to this manager's team */
+/* Guard helper */
 function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
 {
     $sql = "SELECT 1
@@ -54,7 +54,7 @@ function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
     }
 }
 
-/* Actions: mark_read / forward / flag / delete (with terminal-state protection) */
+/* Actions */
 $action = $_POST['action'] ?? '';
 if ($action) {
     $aid = (int) ($_POST['affirmation_id'] ?? 0);
@@ -64,26 +64,13 @@ if ($action) {
     }
     assertTeamAffirmation($pdo, $managerId, $aid);
 
-    // Fetch current status once
-    $cur = $pdo->prepare("SELECT status FROM affirmations WHERE affirmation_id=:aid");
-    $cur->execute(['aid' => $aid]);
-    $currentStatus = strtolower((string) $cur->fetchColumn());
-
     if ($action === 'mark_read') {
-        // Only allow unread -> read; never override forwarded/flagged
-        if ($currentStatus === 'unread') {
-            $st = $pdo->prepare("UPDATE affirmations SET status='read' WHERE affirmation_id=:aid");
-            $st->execute(['aid' => $aid]);
-        }
+        $st = $pdo->prepare("UPDATE affirmations SET status='read' WHERE affirmation_id=:aid AND status='unread'");
+        $st->execute(['aid' => $aid]);
         exit('OK');
     }
 
     if ($action === 'forward') {
-        // Can't forward if already forwarded or flagged
-        if ($currentStatus === 'forwarded' || $currentStatus === 'flagged') {
-            header('Location: manager-dash.php?err=locked');
-            exit;
-        }
         $st = $pdo->prepare("UPDATE affirmations SET status='forwarded' WHERE affirmation_id=:aid");
         $st->execute(['aid' => $aid]);
         header('Location: manager-dash.php?ok=forwarded');
@@ -91,11 +78,6 @@ if ($action) {
     }
 
     if ($action === 'flag') {
-        // Can't flag if already flagged or forwarded
-        if ($currentStatus === 'flagged' || $currentStatus === 'forwarded') {
-            header('Location: manager-dash.php?err=locked');
-            exit;
-        }
         $reasons = trim((string) ($_POST['reasons'] ?? '')) ?: null;
         $st = $pdo->prepare("UPDATE affirmations SET status='flagged', flag_reason=:r WHERE affirmation_id=:aid");
         $st->execute(['aid' => $aid, 'r' => $reasons]);
@@ -111,7 +93,7 @@ if ($action) {
     }
 }
 
-/* Query: team members and their affirmations */
+/* Query: team members & affirmations */
 $st = $pdo->prepare("
   SELECT u.id, u.email, ms.department
   FROM manager_staff ms
@@ -123,11 +105,8 @@ $st->execute(['mid' => $managerId]);
 $teamMembers = $st->fetchAll(PDO::FETCH_ASSOC);
 
 $st = $pdo->prepare("
-  SELECT a.*,
-         us.email AS sender_email,
-         ur.email AS recipient_email
+  SELECT a.*, ur.email AS recipient_email
   FROM affirmations a
-  JOIN users us ON us.id=a.sender_id
   JOIN users ur ON ur.id=a.recipient_id
   WHERE a.sender_id IN (SELECT staff_id FROM manager_staff WHERE manager_id=:mid)
   ORDER BY a.submitted_at DESC
@@ -145,7 +124,7 @@ include 'header.php';
             <div class="small text-muted mb-3">
                 Team:
                 <?php foreach ($teamMembers as $i => $m): ?>
-                    <?= $i > 0 ? ' , ' : '' ?> <?= htmlspecialchars($m['email']) ?>
+                    <?= $i > 0 ? ' , ' : '' ?>         <?= htmlspecialchars($m['email']) ?>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
@@ -158,24 +137,17 @@ include 'header.php';
                 $aid = (int) $row['affirmation_id'];
                 $status = strtolower($row['status'] ?: 'unread');
                 $statusClass = 'status--' . $status;
-            ?>
+                ?>
                 <article class="msg" data-aid="<?= $aid ?>" data-status="<?= htmlspecialchars($status) ?>"
                     aria-expanded="false">
-                    <div class="msg__head" role="button" aria-controls="msg-<?= $aid ?>-details" aria-expanded="false">
-                        <div class="avatar"><?= strtoupper(substr($row['sender_email'], 0, 1)) ?></div>
+                    <div class="msg__head" role="button">
+                        <div class="avatar"><?= strtoupper(substr($row['recipient_email'], 0, 1)) ?></div>
 
                         <div class="text">
                             <div class="to-line">
-                                <span class="from" title="<?= htmlspecialchars($row['sender_email']) ?>">
-                                    <?= htmlspecialchars($row['sender_email']) ?>
-                                </span>
-                                <span class="sep" aria-hidden="true">→</span>
-                                <span class="to" title="<?= htmlspecialchars($row['recipient_email']) ?>">
-                                    <?= htmlspecialchars($row['recipient_email']) ?>
-                                </span>
-
+                                to <span><?= htmlspecialchars($row['recipient_email']) ?></span>
                                 <div class="status status-pill <?= $statusClass ?>" title="<?= ucfirst($status) ?>">
-                                    <span class="dot" aria-hidden="true"></span><span><?= ucfirst($status) ?></span>
+                                    <span class="dot"></span><span><?= ucfirst($status) ?></span>
                                 </div>
                             </div>
 
@@ -184,23 +156,18 @@ include 'header.php';
                         </div>
 
                         <div class="state">
-                            <div class="meta" aria-label="Date">
+                            <div class="meta">
                                 <i class="fa-solid fa-clock"></i>
                                 <span><?= date('M d', strtotime($row['submitted_at'])) ?></span>
                             </div>
-
-                            <!-- Gray trash icon -> opens Confirm Delete modal -->
                             <button type="button" class="icon-trash" title="Delete" data-toggle="modal"
-                                data-target="#confirmDelete" data-aid="<?= $aid ?>" aria-label="Delete this message">
-                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" class="trash-svg">
+                                data-target="#confirmDelete" data-aid="<?= $aid ?>">
+                                <svg viewBox="0 0 24 24" class="trash-svg">
                                     <path
-                                        d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1.1l-1.1 12.1A3 3 0 0 1 14.81 23H9.19a3 3 0 0 1-2.99-2.9L5.1 7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1Zm1 2h4V4h-4v1Zm-2.9 2 1 11.1a1 1 0 0 0 .99.9h5.62a1 1 0 0 0 .99-.9L16.9 7H7.1ZM10 9a1 1 0 0 1 1 1v7a1 1 0 1 1-2 0v-7a1 1 0 0 1 1-1Zm4 0a1 1 0 0 1 1 1v7a1 1 0 1 1-2 0v-7a1 1 0 0 1 1-1Z" />
+                                        d="M9 3h6a1 1 0 0 1 1 1v1h4a1 1 0 1 1 0 2h-1.1l-1.1 12.1A3 3 0 0 1 14.81 23H9.19a3 3 0 0 1-2.99-2.9L5.1 7H4a1 1 0 1 1 0-2h4V4a1 1 0 0 1 1-1Z" />
                                 </svg>
                             </button>
-
-                            <button class="arrow-btn" type="button" aria-label="Toggle details" aria-expanded="false">
-                                <i class="fa-solid fa-chevron-down"></i>
-                            </button>
+                            <button class="arrow-btn" type="button"><i class="fa-solid fa-chevron-down"></i></button>
                         </div>
                     </div>
 
@@ -214,146 +181,64 @@ include 'header.php';
                         <?php endif; ?>
 
                         <div class="actions">
-                            <!-- Yellow -->
                             <button class="btn btn-warning action-flag" type="button" data-toggle="modal"
                                 data-target="#flagModal" data-aid="<?= $aid ?>">
                                 Flag as Abuse
                             </button>
 
-                            <!-- Light gray, blue hover -->
                             <form method="POST" class="d-inline">
                                 <input type="hidden" name="action" value="forward">
                                 <input type="hidden" name="affirmation_id" value="<?= $aid ?>">
-                                <button type="submit" class="btn btn-secondary btn-forward">
-                                    Forward
-                                </button>
+                                <button type="submit" class="btn btn-secondary btn-forward">Forward</button>
                             </form>
                         </div>
                     </div>
                 </article>
             <?php endforeach; ?>
-
         </div>
     </div>
 
     <!-- Flag modal -->
-    <div class="modal fade" id="flagModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="flagModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header strip">
-                    <div class="bar bar-yellow">
-                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                            <span aria-hidden="true">&times;</span>
-                        </button>
-                    </div>
-                </div>
-
                 <form method="POST" id="flagForm">
                     <input type="hidden" name="action" value="flag">
                     <input type="hidden" name="affirmation_id" id="flagAid" value="">
                     <input type="hidden" name="reasons" id="flagReasons" value="">
                     <div class="modal-body">
-                        <h5 class="mb-3 font-weight-bold">Flag as Abuse:</h5>
-
+                        <h5 class="mb-3">Flag as Abuse:</h5>
                         <div id="reasonsGroup" class="btn-group btn-group-toggle d-flex flex-wrap w-100"
                             data-toggle="buttons">
                             <?php
                             $flags = ['Inappropriate tone', 'Personal attack', 'Possible identity breach', 'Spam', 'Discriminatory language', 'Sexual content'];
                             foreach ($flags as $f): ?>
                                 <label class="btn btn-outline m-1 flex-fill">
-                                    <input type="checkbox" value="<?= htmlspecialchars($f) ?>" autocomplete="off">
-                                    <?= htmlspecialchars($f) ?>
+                                    <input type="checkbox" value="<?= htmlspecialchars($f) ?>"> <?= htmlspecialchars($f) ?>
                                 </label>
                             <?php endforeach; ?>
                         </div>
-
                         <div id="flagHint" class="text-danger small d-none mt-2">Please select at least one reason.
                         </div>
-
                         <div class="d-flex justify-content-center gap-2 mt-4">
                             <button type="button" class="btn btn-warning mr-2" id="btnReset">Reset</button>
-                            <button type="submit" class="btn btn-primary" id="btnSubmit">Submit</button>
+                            <button type="submit" class="btn btn-primary">Submit</button>
                         </div>
                     </div>
                 </form>
-
             </div>
         </div>
     </div>
 
-    <!-- Forwarded success -->
-    <div class="modal fade" id="forwardModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header strip">
-                    <div class="bar bar-blue">
-                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                            <span aria-hidden="true" class="text-white">&times;</span>
-                        </button>
-                    </div>
-                </div>
-                <div class="modal-body">
-                    <h5 class="text-center font-weight-bold m-0">The message has been sent to the recipient’s inbox.
-                    </h5>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Flagged success (dark bar) -->
-    <div class="modal fade" id="reportedModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header strip">
-                    <div class="bar bar-dark">
-                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                            <span aria-hidden="true" class="text-white">&times;</span>
-                        </button>
-                    </div>
-                </div>
-                <div class="modal-body">
-                    <h5 class="text-center font-weight-bold m-0">The message has been reported to HR.</h5>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Locked attempt (trying to switch between forwarded <-> flagged) -->
-    <div class="modal fade" id="lockedModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header strip">
-                    <div class="bar bar-dark">
-                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                            <span aria-hidden="true" class="text-white">&times;</span>
-                        </button>
-                    </div>
-                </div>
-                <div class="modal-body">
-                    <h5 class="text-center font-weight-bold m-0">
-                        This message already has a final status and cannot be changed.
-                    </h5>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Confirm Delete (shared) -->
-    <div class="modal fade" id="confirmDelete" tabindex="-1" aria-hidden="true">
+    <!-- Confirm Delete modal -->
+    <div class="modal fade" id="confirmDelete" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <form method="POST" class="modal-content">
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="affirmation_id" id="delAid" value="">
-                <div class="modal-header strip">
-                    <div class="bar bar-dark">
-                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                            <span class="text-white" aria-hidden="true">&times;</span>
-                        </button>
-                    </div>
-                </div>
-                <div class="modal-body">
-                    <h5 class="text-center font-weight-bold m-0">Delete this message?</h5>
-                    <p class="text-center mt-2 mb-0 text-muted">This action cannot be undone.</p>
+                <div class="modal-body text-center">
+                    <h5>Delete this message?</h5>
+                    <p class="text-muted">This action cannot be undone.</p>
                 </div>
                 <div class="modal-footer justify-content-center">
                     <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
@@ -362,105 +247,68 @@ include 'header.php';
             </form>
         </div>
     </div>
-
 </div>
 
 <?php include 'footer.php'; ?>
 
 <script>
     /* Flag modal wiring */
-    (function() {
-        $('#flagModal').on('show.bs.modal', function(ev) {
-            var btn = ev.relatedTarget;
-            var aid = btn && btn.getAttribute('data-aid');
-            document.getElementById('flagAid').value = aid || '';
-            $('#reasonsGroup input[type=checkbox]').prop('checked', false).parent().removeClass('active');
-            document.getElementById('flagHint').classList.add('d-none');
-        });
+    $('#flagModal').on('show.bs.modal', function (ev) {
+        var btn = ev.relatedTarget;
+        var aid = btn && btn.getAttribute('data-aid');
+        document.getElementById('flagAid').value = aid || '';
+        $('#reasonsGroup input[type=checkbox]').prop('checked', false).parent().removeClass('active');
+        document.getElementById('flagHint').classList.add('d-none');
+    });
 
-        document.getElementById('flagForm').addEventListener('submit', function(e) {
-            var checks = Array.from(document.querySelectorAll('#reasonsGroup input[type=checkbox]:checked'));
-            if (!checks.length) {
-                e.preventDefault();
-                document.getElementById('flagHint').classList.remove('d-none');
-                return false;
-            }
-            document.getElementById('flagReasons').value = checks.map(function(c) {
-                return c.value;
-            }).join(', ');
-        });
+    document.getElementById('flagForm').addEventListener('submit', function (e) {
+        var checks = Array.from(document.querySelectorAll('#reasonsGroup input[type=checkbox]:checked'));
+        if (!checks.length) {
+            e.preventDefault();
+            document.getElementById('flagHint').classList.remove('d-none');
+            return false;
+        }
+        document.getElementById('flagReasons').value = checks.map(c => c.value).join(', ');
+    });
 
-        document.getElementById('btnReset').addEventListener('click', function() {
-            $('#reasonsGroup input[type=checkbox]').prop('checked', false).parent().removeClass('active');
-            document.getElementById('flagHint').classList.add('d-none');
-        });
-    })();
-
-    /* Confirm Delete modal: inject current AID */
-    $('#confirmDelete').on('show.bs.modal', function(ev) {
+    /* Delete modal: inject AID */
+    $('#confirmDelete').on('show.bs.modal', function (ev) {
         var btn = ev.relatedTarget;
         var aid = btn && btn.getAttribute('data-aid');
         document.getElementById('delAid').value = aid || '';
     });
 
-    /* Expand/collapse + safe mark_read (robust) */
-    (function() {
-        var inbox = document.querySelector('.inbox');
-        if (!inbox) return;
+    document.querySelector('.inbox').addEventListener('click', function (e) {
+        var btn = e.target.closest('.arrow-btn');
+        if (!btn) return;
 
-        inbox.addEventListener('click', function(e) {
-            var clickTarget = e.target.closest('.arrow-btn, .msg__head');
-            if (!clickTarget) return;
+        var msg = btn.closest('.msg');
+        var details = msg.querySelector('.msg__details');
+        var wasOpen = msg.getAttribute('aria-expanded') === 'true';
+        var nowOpen = !wasOpen;
 
-            var msg = clickTarget.closest('.msg');
-            if (!msg) return;
-            var details = msg.querySelector('.msg__details');
-            var wasOpen = msg.getAttribute('aria-expanded') === 'true';
-            var nowOpen = !wasOpen;
+        msg.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+        details.style.display = nowOpen ? 'block' : 'none';
+        btn.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
 
-            msg.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
-            if (details) details.style.display = nowOpen ? 'block' : 'none';
+        var cur = (msg.dataset.status || '').toLowerCase();
+        if (nowOpen && cur === 'unread') {
+            var aid = msg.getAttribute('data-aid');
 
-            var arrowBtn = msg.querySelector('.arrow-btn');
-            if (arrowBtn) arrowBtn.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
-
-            var cur = (msg.dataset.status || '').toLowerCase();
-            if (nowOpen && cur === 'unread') {
-                var aid = msg.getAttribute('data-aid');
-                fetch('manager-dash.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: 'action=mark_read&affirmation_id=' + encodeURIComponent(aid)
-                }).then(function() {
-                    // 本地 UI 同步
-                    msg.dataset.status = 'read';
-
-                    var pill = msg.querySelector('.status-pill') || msg.querySelector('.status');
-                    if (pill) {
-                        pill.classList.remove('status--unread');
-                        pill.classList.add('status--read');
-                        var text = pill.querySelector('span:last-child');
-                        if (text) text.textContent = 'Read';
-                    }
-                }).catch(function() {});
+            msg.dataset.status = 'read';
+            var pill = msg.querySelector('.status-pill') || msg.querySelector('.status');
+            if (pill) {
+                pill.classList.remove('status--unread');
+                pill.classList.add('status--read');
+                var textEl = pill.querySelector('span:last-child');
+                if (textEl) textEl.textContent = 'Read';
             }
-        });
 
-        // Success/error modals + clear the query string to avoid repeat on refresh
-        var params = new URLSearchParams(location.search);
-        if (params.get('ok') === 'forwarded') {
-            $('#forwardModal').modal('show');
+            fetch('manager-dash.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'action=mark_read&affirmation_id=' + encodeURIComponent(aid)
+            }).catch(function () { });
         }
-        if (params.get('ok') === 'flagged') {
-            $('#reportedModal').modal('show');
-        }
-        if (params.get('err') === 'locked') {
-            $('#lockedModal').modal('show');
-        }
-        if (params.has('ok') || params.has('err')) {
-            window.history.replaceState({}, '', 'manager-dash.php');
-        }
-    })();
+    });
 </script>
