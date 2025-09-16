@@ -202,6 +202,13 @@ include 'header.php';
     <div class="modal fade" id="flagModal" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
+                <div class="modal-header border-0 pb-0">
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+
+
                 <form method="POST" id="flagForm">
                     <input type="hidden" name="action" value="flag">
                     <input type="hidden" name="affirmation_id" id="flagAid" value="">
