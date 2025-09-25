@@ -1,323 +1,319 @@
-<html lang="en" webcrx="">
+<!DOCTYPE html>
+<html lang="en">
 
 <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Console – Tabbed</title>
+
+    <!-- Bootstrap 4 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+
     <style>
         body {
-            transition: opacity ease-in 0.2s;
+            background: #f7f8fa
         }
 
-        body[unresolved] {
-            opacity: 0;
-            display: block;
-            overflow: hidden;
-            position: relative;
-        }
-    </style>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="./css/bootstrap.min.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,200..1000;1,200..1000&amp;family=Roboto:ital,wght@0,100..900;1,100..900&amp;display=swap"
-        rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="./css/style.css">
-    <title>Launceston Grammar School</title>
-    <script src="blob:http://8.219.204.137/d469fc0f-4c53-416b-a8cf-2c32dd38539c"></script>
-    <style>
-        @font-face {
-            font-family: 'mediumText';
-            src: url('chrome-extension://jcmcbmdmfmelmlelagelpfhmohipjjia/Inter-Medium.woff2') format('woff2'),
-                url('chrome-extension://jcmcbmdmfmelmlelagelpfhmohipjjia/Inter-Medium.woff') format('woff');
+        header {
+            background: #e9ecef;
+            border-bottom: 1px solid #dee2e6
         }
 
-        @font-face {
-            font-family: 'defaultText';
-            src: url('chrome-extension://jcmcbmdmfmelmlelagelpfhmohipjjia/Inter-Regular.woff2') format('woff2'),
-                url('chrome-extension://jcmcbmdmfmelmlelagelpfhmohipjjia/Inter-Regular.woff') format('woff');
+        .title {
+            font-weight: 800;
+            font-size: 1.25rem
         }
 
-        @font-face {
-            font-family: 'boldText';
-            src: url('chrome-extension://jcmcbmdmfmelmlelagelpfhmohipjjia/Inter-Bold.woff2') format('woff2'),
-                url('chrome-extension://jcmcbmdmfmelmlelagelpfhmohipjjia/Inter-Bold.woff') format('woff');
+        .card {
+            border-radius: 10px
         }
 
-        .zyft-extension-root {
-            all: initial;
-            display: block !important;
-            position: fixed;
-            top: 0;
-            right: 0;
-            left: 0;
-            height: 0;
-            /* highest 32bit value */
-            z-index: 2147483647;
+        .btn-wide {
+            min-width: 140px
         }
 
-        .zyft-extension__shadow-root {
-            display: block !important;
-            font-family: 'defaultText', 'Inter', sans-serif;
-            line-height: normal;
-            color: #393939;
-            color-scheme: light;
+        .empty {
+            color: #6c757d
+        }
+
+        .small-help {
+            color: #6c757d;
+            font-size: .9rem
+        }
+
+        .nav-tabs .nav-link {
+            font-weight: 600
         }
     </style>
 </head>
 
 <body>
-    <header class="header" id="headerTop">
-        <div class="container">
-            <nav class="navbar navbar-expand-lg navbar-light">
-                <a class="navbar-brand" href="index.php"><img src="./img/LCGS_FullColour_Primary.svg" alt="Logo"
-                        class="img-fluid"></a>
-                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarNav"
-                    aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-                    <span class="navbar-toggler-icon"></span>
-                </button>
-                <div class="collapse navbar-collapse" id="navbarNav">
-                    <ul class="navbar-nav ml-auto ms-auto d-flex align-items-center">
-                        <li class="nav-item">
-                            <a href="logout.php" class="btn btn-secondary btn-sm">Logout</a>
-                        </li>
-                    </ul>
-                </div>
-            </nav>
+    <header class="py-3">
+        <div class="container d-flex align-items-center justify-content-between">
+            <div class="title">Admin Console</div>
+            <button class="btn btn-outline-secondary btn-sm">Log out</button>
         </div>
     </header>
 
-    <div class="banner ">
+    <main class="py-4">
         <div class="container">
-            <h1>Dashboard</h1>
-        </div>
-    </div>
 
-    <style>
-        /* ✅ Ensure long messages wrap nicely */
-        .affirmation p {
-            word-wrap: break-word;
-            overflow-wrap: break-word;
-            white-space: pre-wrap;
-        }
-    </style>
+            <!-- Tabs -->
+            <ul class="nav nav-tabs" id="adminTabs" role="tablist">
+                <li class="nav-item">
+                    <a class="nav-link active" id="cycle-tab" data-toggle="tab" href="#cycle" role="tab"
+                        aria-controls="cycle" aria-selected="true">Cycle Schedule</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="templates-tab" data-toggle="tab" href="#templates" role="tab"
+                        aria-controls="templates" aria-selected="false">Templates</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="staff-tab" data-toggle="tab" href="#staff" role="tab" aria-controls="staff"
+                        aria-selected="false">Staff Sync</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="audit-tab" data-toggle="tab" href="#audit" role="tab" aria-controls="audit"
+                        aria-selected="false">Audit Log</a>
+                </li>
+            </ul>
 
-    <div class="container py-5">
-        <div class="row">
-            <!-- Left Column: Affirmation History -->
-            <div class="col-lg-7 order-2 order-lg-1">
-                <div class="aff-content">
-                    <!-- Button to trigger modal -->
-                    <button class="btn btn-primary mb-3" data-toggle="modal" data-target="#affirmationModal">New
-                        Affirmation</button>
+            <!-- Tab panes -->
+            <div class="tab-content pt-3" id="adminTabsContent">
 
-                    <h5>Affirmation History</h5>
+                <!-- Cycle Schedule -->
+                <div class="tab-pane fade show active" id="cycle" role="tabpanel" aria-labelledby="cycle-tab">
+                    <!-- Settings -->
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-body">
+                            <h5 class="mb-3">Cycle Settings</h5>
 
-                    <div class="affirmation mb-3 p-2 border">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> Hello<br>
-                        <p>In 1870s Norway, Nora Helmer struggles to be her own person within her marriage and a society
-                            that limits the…</p>
-                        <div class="mt-2"><a href="#" class="load-toggle">Load more</a></div>
-                        <small>Sep 08, 2025 11:35</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> test<br>
-                        <p>In 1870s Norway, Nora Helmer struggles to be her own person within her marriage and a society
-                            that limits the…</p>
-                        <div class="mt-2"><a href="#" class="load-toggle">Load more</a></div>
-                        <small>Sep 06, 2025 13:37</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> Hello<br>
-                        <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Minima voluptatum ipsam eaque,
-                            perferendis magnam fugiat dolorem amet? Vitae itaque aperiam…</p>
-                        <div class="mt-2"><a href="#" class="load-toggle">Load more</a></div>
-                        <small>Sep 06, 2025 13:06</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> wentianw@utas.edu.au<br>
-                        <strong>Subject:</strong> fdsaefds alf f<br>
-                        <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Minima voluptatum ipsam eaque,
-                            perferendis magnam fugiat dolorem amet? Vitae itaque aperiam…</p>
-                        <div class="mt-2"><a href="#" class="load-toggle">Load more</a></div>
-                        <small>Aug 25, 2025 11:18</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> xiaozhuz@utas.edu.au<br>
-                        <strong>Subject:</strong> Test sunbjec<br>
-                        <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Minima voluptatum ipsam eaque,
-                            perferendis magnam fugiat dolorem amet? Vitae itaque aperiam…</p>
-                        <div class="mt-2"><a href="#" class="load-toggle">Load more</a></div>
-                        <small>Aug 25, 2025 11:17</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> Hello<br>
-                        <p>Lorem ipsum dolor sit amet, consectetur adipisicing elit. Minima voluptatum ipsam eaque,
-                            perferendis magnam fugiat dolorem amet? Vitae itaque aperiam…</p>
-                        <div class="mt-2"><a href="#" class="load-toggle">Load more</a></div>
-                        <small>Aug 25, 2025 11:02</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> Note<br>
-                        <p>Najkskaklalskkm
-                            vvhkkklnjskskksksksksksklslsmsmsnsbbsnsjsjjsididjsjnskakksosoekekmemsmmsmsmsmsmmsmsmsmsmsmmsmsmsmsmsmsmsmsmmsmsmsmsmmsmsmsmmsmsmsmmsmsmsmmsmsmmsmdkdkdkdkkdkdkdkkdkdkdkkdkdkkdkdkbnsnsnsmmsmsmsmnsnsnnsnsndmdmmdmdmdmdmmsmsmsmmsmsmdmmdmdmdmmdmdmbsnsnkaksksmmsmsnsnnsmskkskdkdkkskskkdldlslmdmsmmsmsmsmmsmsmsmmsmsmsmmdmsmsmsmmsmdmdmdmmsmdmdmmsmsmmsmsmsmdmmdmdmdmmdmdmdmdmmdmdmdmdmmsmdmdmdmdmdmdmdmhhjjjjjjnmmkkkkkkkkkkkkk
-                        </p>
-                        <small>Aug 22, 2025 18:30</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> 0822testing<br>
-                        <p>222</p>
-                        <small>Aug 22, 2025 12:23</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> project<br>
-                        <p>project</p>
-                        <small>Aug 21, 2025 20:46</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> Hello<br>
-                        <p>fdsafasfewafsdfawefadsfads</p>
-                        <small>Aug 21, 2025 20:42</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> Subject!<br>
-                        <p>Content!</p>
-                        <small>Aug 21, 2025 20:34</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> food<br>
-                        <p>food food food</p>
-                        <small>Aug 21, 2025 17:50</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> ewrer<br>
-                        <p>Werner</p>
-                        <small>Aug 21, 2025 17:46</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> hello<br>
-                        <p>sjhevjfh</p>
-                        <small>Aug 21, 2025 17:31</small>
-                    </div>
-                    <div class="affirmation mb-3 p-2 border" style="display: none;">
-                        <strong>Sent to:</strong> rithamc@utas.edu.au<br>
-                        <strong>Subject:</strong> hello<br>
-                        <p>sejbfksjbfsf</p>
-                        <small>Aug 21, 2025 17:07</small>
-                    </div>
-                </div>
-
-                <!-- Modal Form -->
-                <div class="modal fade" id="affirmationModal" tabindex="-1" role="dialog">
-                    <div class="modal-dialog" role="document">
-                        <div class="modal-content">
-                            <form method="POST">
-                                <div class="modal-header">
-                                    <h5 class="modal-title">New Affirmation</h5>
-                                    <button type="button" class="close" data-dismiss="modal">×</button>
+                            <div class="form-row">
+                                <div class="form-group col-md-4">
+                                    <label for="startDate">Start Date</label>
+                                    <input id="startDate" type="date" class="form-control" autocomplete="off">
                                 </div>
-                                <div class="modal-body">
-                                    <div class="form-group">
-                                        <label>Recipient</label>
-                                        <select name="recipient_id" class="form-control" required="">
-                                            <option value="5">rithamc@utas.edu.au</option>
-                                            <option value="6">wentianw@utas.edu.au</option>
-                                            <option value="7">xiaozhuz@utas.edu.au</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Subject</label>
-                                        <input type="text" name="subject" class="form-control" placeholder="Subject"
-                                            required="">
-                                    </div>
-                                    <div class="form-group">
-                                        <label>Message</label>
-                                        <textarea name="message" id="message" class="form-control" rows="3"
-                                            placeholder="Write your message (max 250 words)" required=""></textarea>
-                                        <small id="wordCount" class="text-muted">0 / 250 words</small>
-                                        <!-- ✅ Word limit warning -->
-                                        <div id="wordWarning" class="text-danger d-none">
-                                            ❌ Your message cannot exceed 250 words.
-                                        </div>
+                                <div class="form-group col-md-4">
+                                    <label for="repeatWeeks">Repeat Rule (weeks)</label>
+                                    <input id="repeatWeeks" type="number" min="1" step="1" value="2"
+                                        class="form-control">
+                                    <small class="small-help">End date = start + (weeks × 7 − 1) days.</small>
+                                </div>
+                                <div class="form-group col-md-4 d-flex align-items-end">
+                                    <div class="btn-group w-100">
+                                        <button id="btnReset" class="btn btn-warning btn-wide">Reset</button>
+                                        <button id="btnSave" class="btn btn-primary btn-wide">Save Cycle</button>
                                     </div>
                                 </div>
-                                <div class="modal-footer">
-                                    <!-- ✅ Added id="sendBtn" -->
-                                    <button id="sendBtn" class="btn btn-primary" type="submit" disabled="">Send</button>
-                                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
-                                </div>
-                            </form>
+                            </div>
+
+                            <div class="custom-control custom-switch mb-2">
+                                <input type="checkbox" class="custom-control-input" id="cycleOpen" checked>
+                                <label class="custom-control-label" for="cycleOpen"><span id="openLabel">Current Cycle:
+                                        OPEN</span></label>
+                            </div>
+
+                            <hr>
+                            <div class="d-flex align-items-center">
+                                <div class="mr-3 text-muted">Summary:</div>
+                                <div id="summary" class="font-weight-bold">—</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- History -->
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center mb-2">
+                                <h5 class="mb-0 mr-auto">Cycle History</h5>
+                                <button id="btnClear" class="btn btn-outline-danger btn-sm">Clear History</button>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped mb-0">
+                                    <thead class="thead-light">
+                                        <tr>
+                                            <th>#</th>
+                                            <th>Start</th>
+                                            <th>End (auto)</th>
+                                            <th>Duration</th>
+                                            <th>Weeks</th>
+                                            <th>Open?</th>
+                                            <th>Saved At</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="historyBody">
+                                        <tr class="empty">
+                                            <td colspan="8" class="text-center py-4">No cycles saved yet.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </div>
 
-            </div>
-
-            <!-- Right Column: Current Cycle -->
-            <div class="col-lg-5 mb-4 mb-lg-0 order-1 order-lg-2">
-                <div class="cycle open">
-                    <h5>Current Cycle</h5>
-                    <p>Status: OPEN</p>
-
-                    <div class="progress mb-2">
-                        <div class="progress-bar bg-info" style="width: 100%;"></div>
+                <!-- Templates -->
+                <div class="tab-pane fade" id="templates" role="tabpanel" aria-labelledby="templates-tab">
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <h5 class="mb-3">Templates</h5>
+                            <p class="text-muted mb-0">Add your message templates here.</p>
+                        </div>
                     </div>
-                    <p>Time Remaining: 0d 0h 0m</p>
                 </div>
-            </div>
+
+                <!-- Staff Sync -->
+                <div class="tab-pane fade" id="staff" role="tabpanel" aria-labelledby="staff-tab">
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <h5 class="mb-3">Staff Sync</h5>
+                            <p class="text-muted mb-0">Connect and sync staff directories or CSV uploads.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audit Log -->
+                <div class="tab-pane fade" id="audit" role="tabpanel" aria-labelledby="audit-tab">
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <h5 class="mb-3">Audit Log</h5>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-striped mb-0" id="auditTable">
+                                    <thead class="thead-light">
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>User</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="auditBody">
+                                        <!-- filled by JS -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /.tab-content -->
         </div>
-    </div>
+    </main>
 
-    <!-- ✅ JS Word Counter -->
+    <!-- jQuery + Popper + Bootstrap 4 JS (for working tabs) -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.min.js"></script>
+
     <script>
-        document.addEventListener("DOMContentLoaded", function () {
-            const messageBox = document.getElementById("message");
-            const wordCount = document.getElementById("wordCount");
-            const wordWarning = document.getElementById("wordWarning");
-            const sendBtn = document.getElementById("sendBtn");
+        /* ===== minimal jQuery: just ready + one delegated handler ===== */
+        $(function () {
+            // ======= Cycle Schedule (vanilla JS with tiny helpers) =======
+            const startEl = document.getElementById('startDate');
+            const weeksEl = document.getElementById('repeatWeeks');
+            const openEl = document.getElementById('cycleOpen');
+            const openLbl = document.getElementById('openLabel');
+            const summary = document.getElementById('summary');
+            const tbody = document.getElementById('historyBody');
+            const KEY = 'tabs_minjq_cycles';
 
-            messageBox.addEventListener("input", function () {
-                let words = messageBox.value.trim().split(/\s+/).filter(word => word.length > 0);
-                let count = words.length;
+            const pad = n => String(n).padStart(2, '0');
+            const toYMD = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+            function parseYMD(s) { if (!s) return null; const [y, m, d] = s.split('-').map(Number); if (!y || !m || !d) return null; return new Date(y, m - 1, d); }
+            function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+            function calcEnd(s, w) { return addDays(s, w * 7 - 1); } // inclusive
+            function human(d) { return new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(d); }
+            function load() { try { return JSON.parse(localStorage.getItem(KEY) || '[]') } catch { return [] } }
+            function save(list) { localStorage.setItem(KEY, JSON.stringify(list)); }
 
-                wordCount.textContent = count + " / 250 words";
+            function updateSummary() {
+                const s = parseYMD(startEl.value);
+                const w = Math.max(1, parseInt(weeksEl.value || '1', 10));
+                if (!s) { summary.textContent = '—'; return; }
+                const e = calcEnd(s, w);
+                const days = Math.round((e - s) / 86400000) + 1;
+                summary.textContent = `${human(s)} → ${human(e)} • ${days} days (${(days / 7).toFixed(2)} wk) • ${openEl.checked ? 'OPEN' : 'CLOSED'} • every ${w} wk`;
+            }
 
-                if (count > 250) {
-                    wordCount.classList.remove("text-muted");
-                    wordCount.classList.add("text-danger");
-                    wordWarning.classList.remove("d-none");
-                    sendBtn.disabled = true;
-                } else {
-                    wordCount.classList.remove("text-danger");
-                    wordCount.classList.add("text-muted");
-                    wordWarning.classList.add("d-none");
-                    sendBtn.disabled = count === 0; // enable only if >0 words
+            function render() {
+                const list = load();
+                tbody.innerHTML = '';
+                if (!list.length) {
+                    tbody.innerHTML = '<tr class="empty"><td colspan="8" class="text-center py-4">No cycles saved yet.</td></tr>';
+                    return;
                 }
+                list.forEach((row, i) => {
+                    const s = parseYMD(row.start), e = parseYMD(row.end);
+                    const days = Math.round((e - s) / 86400000) + 1;
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+        <td>${human(s)}</td>
+        <td>${human(e)}</td>
+        <td>${days} days</td>
+        <td>${row.weeks}</td>
+        <td>${row.open ? 'Yes' : 'No'}</td>
+        <td>${new Date(row.savedAt).toLocaleString()}</td>
+        <td class="text-right"><button class="btn btn-sm btn-outline-danger" data-id="${row.id}">Delete</button></td>
+      `;
+                    // add row number at runtime via CSS counters or keep simple: prepend number column (optional)
+                    tbody.appendChild(tr);
+                });
+                // Re-number first column if you want an index column; keeping simple here.
+            }
+
+            // Field events (vanilla)
+            startEl.addEventListener('change', updateSummary);
+            weeksEl.addEventListener('input', () => { if (+weeksEl.value < 1) weeksEl.value = 1; updateSummary(); });
+            openEl.addEventListener('change', () => { openLbl.textContent = `Current Cycle: ${openEl.checked ? 'OPEN' : 'CLOSED'}`; updateSummary(); });
+
+            document.getElementById('btnReset').addEventListener('click', () => {
+                startEl.value = ''; weeksEl.value = 2; openEl.checked = true; openLbl.textContent = 'Current Cycle: OPEN'; updateSummary();
             });
+
+            document.getElementById('btnSave').addEventListener('click', () => {
+                const s = parseYMD(startEl.value); if (!s) return alert('Please select a Start date.');
+                const w = Math.max(1, parseInt(weeksEl.value || '1', 10));
+                const e = calcEnd(s, w);
+                const list = load();
+                list.unshift({ id: Math.random().toString(36).slice(2), start: toYMD(s), end: toYMD(e), weeks: w, open: !!openEl.checked, savedAt: new Date().toISOString() });
+                save(list); render();
+            });
+
+            document.getElementById('btnClear').addEventListener('click', () => {
+                if (!confirm('Clear all history?')) return;
+                localStorage.removeItem(KEY); render();
+            });
+
+            // Minimal jQuery: delegated delete button handler
+            $('#historyBody').on('click', 'button[data-id]', function () {
+                const id = this.getAttribute('data-id');
+                const list = load().filter(x => x.id !== id);
+                save(list); render();
+            });
+
+            // ======= Audit Log (simple demo data) =======
+            const auditData = [
+                { date: 'Aug 4', time: '20:45', user: 'Admin', action: 'Sent' },
+                { date: 'Aug 3', time: '23:22', user: 'Ava', action: 'Edited' },
+                { date: 'Aug 1', time: '12:56', user: 'Ava', action: 'Edited' }
+            ];
+            const auditBody = document.getElementById('auditBody');
+            function renderAudit() {
+                auditBody.innerHTML = '';
+                auditData.forEach(r => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${r.date}<br>${r.time}</td><td>${r.user}</td><td>${r.action}</td>`;
+                    auditBody.appendChild(tr);
+                });
+            }
+
+            // Init
+            render(); updateSummary(); renderAudit();
+
+            // (Tabs work via Bootstrap’s data-toggle="tab"; no extra JS needed.)
         });
     </script>
-
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="./js/main.js"></script>
-
-
-    <div id="zyft-extension-root" class="zyft-extension-root"
-        style="display: block !important; position: fixed !important; top: 0px !important; right: 0px !important; left: 0px !important; height: auto !important; z-index: 2147483640 !important; visibility: visible !important; opacity: 1 !important;">
-        <div id="zyft-extension__shadow-root" class="zyft-extension__shadow-root"></div>
-    </div>
 </body>
 
 </html>

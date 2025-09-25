@@ -1,4 +1,39 @@
 $(document).ready(function () {
+    //Toggle ONLY the filters panel admin page
+    jQuery(function ($) {
+        var $btn = $('.filters-toggle');
+        var $icon = $btn.find('.toggleIcon');
+        var $filters = $('#filtersContent');
+        var mq = window.matchMedia('(max-width: 991.98px)'); // < lg
+
+        function sync() {
+            // Keep filters open on desktop; allow toggle on mobile
+            if (!mq.matches) $filters.addClass('is-open');
+            $icon.text($filters.hasClass('is-open') ? '▲' : '▼');
+            $btn.attr('aria-expanded', $filters.hasClass('is-open'));
+        }
+
+        // Initial state: closed on mobile, open on desktop
+        if (mq.matches) $filters.removeClass('is-open'); else $filters.addClass('is-open');
+        sync();
+
+        // Toggle only the filters
+        $btn.on('click', function (e) {
+            e.preventDefault();
+            // On desktop this will no-op because sync() forces open; on mobile it toggles
+            $filters.toggleClass('is-open');
+            sync();
+        });
+
+        // Also let the "Filters:" header act as a toggle
+        $('.filters-header').on('click', function () { $btn.trigger('click'); });
+
+        // Re-sync when viewport crosses the breakpoint
+        (mq.addEventListener ? mq.addEventListener('change', sync) : mq.addListener(sync));
+    });
+});
+
+$(document).ready(function () {
 
     //Affirmation form search bar 
     $("#searchInput").on("keyup click", function () {
@@ -284,6 +319,108 @@ $(document).ready(function () {
         }, 200);
     });
 
+    //Admin Cycle Cycle Count JS
+    $(function () {
+        // Vanilla DOM refs
+        const startEl = document.getElementById('startDate');
+        const weeksEl = document.getElementById('repeatWeeks');
+        const openEl = document.getElementById('cycleOpen');
+        const openLbl = document.getElementById('openLabel');
+        const summary = document.getElementById('summary');
+        const tbody = document.getElementById('historyBody');
+
+        const flashEl = document.getElementById('flash');
+        const flashText = document.getElementById('flashText');
+        const flashBtn = document.getElementById('flashClose');
+
+        const KEY = 'minjq_admin_cycles';
+
+        // Utils
+        const pad = n => String(n).padStart(2, '0');
+        const toYMD = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        function parseYMD(s) { if (!s) return null; const [y, m, d] = s.split('-').map(Number); if (!y || !m || !d) return null; return new Date(y, m - 1, d); }
+        function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+        function calcEnd(s, w) { return addDays(s, w * 7 - 1); } // inclusive
+        function human(d) { return new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }).format(d); }
+        function load() { try { return JSON.parse(localStorage.getItem(KEY) || '[]') } catch { return [] } }
+        function save(list) { localStorage.setItem(KEY, JSON.stringify(list)); }
+
+        function flash(msg, type = 'success') {
+            flashEl.className = `alert alert-${type} alert-dismissible fade show`;
+            flashText.textContent = msg;
+            flashEl.style.display = 'block';
+            setTimeout(() => { flashEl.classList.remove('show'); setTimeout(() => flashEl.style.display = 'none', 150); }, 2200);
+        }
+        flashBtn.addEventListener('click', () => { flashEl.classList.remove('show'); setTimeout(() => flashEl.style.display = 'none', 150); });
+
+        function updateSummary() {
+            const s = parseYMD(startEl.value);
+            const w = Math.max(1, parseInt(weeksEl.value || '1', 10));
+            if (!s) { summary.textContent = '—'; return; }
+            const e = calcEnd(s, w);
+            const days = Math.round((e - s) / 86400000) + 1;
+            summary.textContent = `${human(s)} → ${human(e)} • ${days} days (${(days / 7).toFixed(2)} wk) • ${openEl.checked ? 'OPEN' : 'CLOSED'} • every ${w} wk`;
+        }
+
+        function render() {
+            const list = load();
+            tbody.innerHTML = '';
+            if (!list.length) {
+                tbody.innerHTML = '<tr class="empty"><td colspan="8" class="text-center py-4">No cycles saved yet.</td></tr>';
+                return;
+            }
+            list.forEach((row, i) => {
+                const s = parseYMD(row.start), e = parseYMD(row.end);
+                const days = Math.round((e - s) / 86400000) + 1;
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+            <td>${i + 1}</td>
+            <td>${human(s)}</td>
+            <td>${human(e)}</td>
+            <td>${days} days</td>
+            <td>${row.weeks}</td>
+            <td>${row.open ? 'Yes' : 'No'}</td>
+            <td>${new Date(row.savedAt).toLocaleString()}</td>
+            <td class="text-right"><button class="btn btn-sm btn-outline-danger" data-id="${row.id}">Delete</button></td>
+            `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Vanilla handlers
+        startEl.addEventListener('change', updateSummary);
+        weeksEl.addEventListener('input', () => { if (+weeksEl.value < 1) weeksEl.value = 1; updateSummary(); });
+        openEl.addEventListener('change', () => { openLbl.textContent = `Current Cycle: ${openEl.checked ? 'OPEN' : 'CLOSED'}`; updateSummary(); });
+
+        document.getElementById('btnReset').addEventListener('click', () => {
+            startEl.value = ''; weeksEl.value = 2; openEl.checked = true; openLbl.textContent = 'Current Cycle: OPEN'; updateSummary();
+        });
+
+        document.getElementById('btnSave').addEventListener('click', () => {
+            const s = parseYMD(startEl.value); if (!s) return flash('Please select a Start date.', 'warning');
+            const w = Math.max(1, parseInt(weeksEl.value || '1', 10));
+            const e = calcEnd(s, w);
+            const list = load();
+            list.unshift({ id: Math.random().toString(36).slice(2), start: toYMD(s), end: toYMD(e), weeks: w, open: !!openEl.checked, savedAt: new Date().toISOString() });
+            save(list); render(); flash('Cycle saved.');
+        });
+
+        document.getElementById('btnClear').addEventListener('click', () => {
+            if (!confirm('Clear all history?')) return;
+            localStorage.removeItem(KEY); render(); flash('History cleared.', 'secondary');
+        });
+
+        // Minimal jQuery: one delegated handler for delete buttons
+        $('#historyBody').on('click', 'button[data-id]', function () {
+            const id = this.getAttribute('data-id');
+            const list = load().filter(x => x.id !== id);
+            save(list); render();
+        });
+
+        // Init
+        render(); updateSummary();
+    });
+
 });
 
 //Submission Confirmation Modal
@@ -325,6 +462,159 @@ document.addEventListener("DOMContentLoaded", function () {
             }, 300);
         }
     });
+
+    // Sample data for the audit log
+    let auditData = [
+        { date: 'Aug 4', time: '20:45', user: 'Admin', action: 'Sent', timestamp: new Date('2024-08-04 20:45') },
+        { date: 'Aug 3', time: '23:22', user: 'Ava', action: 'Edited', timestamp: new Date('2024-08-03 23:22') },
+        { date: 'Aug 1', time: '12:56', user: 'Ava', action: 'Edited', timestamp: new Date('2024-08-01 12:56') },
+        { date: 'Jul 30', time: '14:30', user: 'Admin', action: 'Created', timestamp: new Date('2024-07-30 14:30') },
+        { date: 'Jul 29', time: '09:15', user: 'John', action: 'Deleted', timestamp: new Date('2024-07-29 09:15') },
+        { date: 'Jul 28', time: '16:42', user: 'Sarah', action: 'Edited', timestamp: new Date('2024-07-28 16:42') }
+    ];
+
+    let filteredData = [...auditData];
+    let sortOrder = { column: -1, ascending: true };
+
+    // Function to render the table
+    function renderTable(data) {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                    <td>${row.date}<br>${row.time}</td>
+                    <td>${row.user}</td>
+                    <td>${row.action}</td>
+                `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Function to sort table
+    function sortTable(columnIndex) {
+        if (sortOrder.column === columnIndex) {
+            sortOrder.ascending = !sortOrder.ascending;
+        } else {
+            sortOrder.column = columnIndex;
+            sortOrder.ascending = true;
+        }
+
+        filteredData.sort((a, b) => {
+            let valA, valB;
+
+            switch (columnIndex) {
+                case 0: // Date
+                    valA = a.timestamp;
+                    valB = b.timestamp;
+                    break;
+                case 1: // User
+                    valA = a.user.toLowerCase();
+                    valB = b.user.toLowerCase();
+                    break;
+                case 2: // Action
+                    valA = a.action.toLowerCase();
+                    valB = b.action.toLowerCase();
+                    break;
+            }
+
+            if (valA < valB) return sortOrder.ascending ? -1 : 1;
+            if (valA > valB) return sortOrder.ascending ? 1 : -1;
+            return 0;
+        });
+
+        renderTable(filteredData);
+    }
+
+    // Function to apply filters
+    function applyFilters() {
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        const userFilter = document.getElementById('userFilter').value.toLowerCase();
+        const typeFilter = document.getElementById('typeFilter').value.toLowerCase();
+
+        filteredData = auditData.filter(row => {
+            let matchesUser = !userFilter || row.user.toLowerCase().includes(userFilter);
+            let matchesType = !typeFilter || row.action.toLowerCase() === typeFilter;
+            let matchesDate = true;
+
+            // Simple date filtering (in a real app, you'd parse the date inputs properly)
+            if (startDate && startDate.toLowerCase().includes('aug')) {
+                matchesDate = matchesDate && row.date.toLowerCase().includes('aug');
+            }
+            if (endDate && endDate.toLowerCase().includes('jul')) {
+                matchesDate = matchesDate && row.date.toLowerCase().includes('jul');
+            }
+
+            return matchesUser && matchesType && matchesDate;
+        });
+
+        renderTable(filteredData);
+
+        // Hide filters on mobile after applying
+        if (window.innerWidth <= 767) {
+            const filtersContent = document.getElementById('filtersContent');
+            const toggleIcon = document.getElementById('toggleIcon');
+            const toggleBtn = document.querySelector('.filters-toggle');
+
+            filtersContent.classList.remove('show');
+            toggleBtn.innerHTML = '<span id="toggleIcon">▼</span> Show Filters';
+        }
+    }
+
+    // Function to reset filters
+    function resetFilters() {
+        document.getElementById('startDate').value = '';
+        document.getElementById('endDate').value = '';
+        document.getElementById('userFilter').value = '';
+        document.getElementById('typeFilter').selectedIndex = 0;
+
+        filteredData = [...auditData];
+        renderTable(filteredData);
+    }
+
+    // Function to export CSV
+    function exportCSV() {
+        const headers = ['Date', 'Time', 'User', 'Action'];
+        const csvContent = [
+            headers.join(','),
+            ...filteredData.map(row => [
+                `"${row.date}"`,
+                `"${row.time}"`,
+                `"${row.user}"`,
+                `"${row.action}"`
+            ].join(','))
+        ].join('\n');
+
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'audit_log.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }
+
+    // Add search functionality on Enter key
+    document.addEventListener('DOMContentLoaded', function () {
+        const inputs = document.querySelectorAll('.filter-input');
+        inputs.forEach(input => {
+            input.addEventListener('keypress', function (e) {
+                if (e.key === 'Enter') {
+                    applyFilters();
+                }
+            });
+        });
+    });
 });
+
+
+
+
+
+
 
 
