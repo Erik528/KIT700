@@ -1,5 +1,11 @@
 <?php
-// manager-dash.php
+// manager-dash.php (with audit_logs writes)
+// -----------------------------------------------------------------------------
+// Every state-changing action performed by a manager will leave a record in
+// audit_logs: read / forwarded / flagged / deleted.
+// target_user_id is taken from affirmations.recipient_id.
+// -----------------------------------------------------------------------------
+
 declare(strict_types=1);
 
 session_start();
@@ -11,7 +17,7 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'manager') {
 }
 $managerId = (int) $_SESSION['user_id'];
 
-/* One-off migration: ensure required columns exist */
+/* -------------------- one-off safety: ensure required columns -------------- */
 try {
     $hasStatus = $pdo->query("
         SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
@@ -36,10 +42,13 @@ try {
         ");
     }
 } catch (Throwable $e) {
-    // keep page running
+    // ignore; page should keep running even if this fails
 }
 
-/* Guard helper */
+/* -------------------- helpers --------------------------------------------- */
+/**
+ * Ensure the affirmation belongs to this manager's team (by sender_id).
+ */
 function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
 {
     $sql = "SELECT 1
@@ -54,7 +63,32 @@ function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
     }
 }
 
-/* Actions */
+/**
+ * Insert a row into audit_logs for the given affirmation/action.
+ * - actor_user_id = manager performing the action
+ * - target_user_id = a.recipient_id (if available)
+ * - reason is optional; pass for "flagged"
+ */
+function audit_log(PDO $pdo, int $affirmationId, int $actorUserId, string $action, ?string $reason = null): void
+{
+    // Fetch recipient_id to fill target_user_id (best-effort)
+    $recip = $pdo->prepare("SELECT recipient_id FROM affirmations WHERE affirmation_id = ?");
+    $recip->execute([$affirmationId]);
+    $targetUserId = $recip->fetchColumn();
+    if ($targetUserId !== false) {
+        $targetUserId = (int) $targetUserId;
+    } else {
+        $targetUserId = null;
+    }
+
+    $ins = $pdo->prepare("
+        INSERT INTO audit_logs (affirmation_id, action, actor_user_id, target_user_id, reason, created_at)
+        VALUES (?, ?, ?, ?, ?, NOW())
+    ");
+    $ins->execute([$affirmationId, $action, $actorUserId, $targetUserId, $reason]);
+}
+
+/* -------------------- POST actions (mutations) ----------------------------- */
 $action = $_POST['action'] ?? '';
 if ($action) {
     $aid = (int) ($_POST['affirmation_id'] ?? 0);
@@ -64,36 +98,53 @@ if ($action) {
     }
     assertTeamAffirmation($pdo, $managerId, $aid);
 
+    // Mark as read only if currently unread; log audit when actually changed.
     if ($action === 'mark_read') {
         $st = $pdo->prepare("UPDATE affirmations SET status='read' WHERE affirmation_id=:aid AND status='unread'");
         $st->execute(['aid' => $aid]);
+        if ($st->rowCount() > 0) {
+            // Only log if status transitioned to read
+            audit_log($pdo, $aid, $managerId, 'read', null);
+        }
         exit('OK');
     }
 
+    // Forward — set status then log the audit entry.
     if ($action === 'forward') {
         $st = $pdo->prepare("UPDATE affirmations SET status='forwarded' WHERE affirmation_id=:aid");
         $st->execute(['aid' => $aid]);
+
+        audit_log($pdo, $aid, $managerId, 'forwarded', null);
+
         header('Location: manager-dash.php?ok=forwarded');
         exit;
     }
 
+    // Flag as abuse — set status + reason then log with reason.
     if ($action === 'flag') {
         $reasons = trim((string) ($_POST['reasons'] ?? '')) ?: null;
         $st = $pdo->prepare("UPDATE affirmations SET status='flagged', flag_reason=:r WHERE affirmation_id=:aid");
         $st->execute(['aid' => $aid, 'r' => $reasons]);
+
+        audit_log($pdo, $aid, $managerId, 'flagged', $reasons);
+
         header('Location: manager-dash.php?ok=flagged');
         exit;
     }
 
+    // Delete — write an audit row FIRST, then delete the record.
     if ($action === 'delete') {
+        audit_log($pdo, $aid, $managerId, 'deleted', null);
+
         $st = $pdo->prepare("DELETE FROM affirmations WHERE affirmation_id=:aid");
         $st->execute(['aid' => $aid]);
+
         header('Location: manager-dash.php?ok=deleted');
         exit;
     }
 }
 
-/* Query: team members & affirmations */
+/* -------------------- Query: team members & affirmations ------------------- */
 $st = $pdo->prepare("
   SELECT u.id, u.email, ms.department
   FROM manager_staff ms
@@ -132,7 +183,6 @@ include 'header.php';
 
     <div class="inbox mt-3 mt-lg-4">
         <div class="container">
-
             <?php foreach ($teamAffirmations as $row):
                 $aid = (int) $row['affirmation_id'];
                 $status = strtolower($row['status'] ?: 'unread');
@@ -207,7 +257,6 @@ include 'header.php';
                         <span aria-hidden="true">&times;</span>
                     </button>
                 </div>
-
 
                 <form method="POST" id="flagForm">
                     <input type="hidden" name="action" value="flag">
@@ -286,7 +335,7 @@ include 'header.php';
     });
 
     document.querySelector('.inbox').addEventListener('click', function (e) {
-        var btn = e.target.closest('.arrow-btn');
+        var btn = e.target.closest('.arrow-btn, .msg__head');
         if (!btn) return;
 
         var msg = btn.closest('.msg');
@@ -296,10 +345,12 @@ include 'header.php';
 
         msg.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
         details.style.display = nowOpen ? 'block' : 'none';
-        btn.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
 
         var cur = (msg.dataset.status || '').toLowerCase();
         if (nowOpen && cur === 'unread') {
+            if (msg.dataset.busy === '1') return;
+            msg.dataset.busy = '1';
+
             var aid = msg.getAttribute('data-aid');
 
             msg.dataset.status = 'read';
@@ -315,7 +366,17 @@ include 'header.php';
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: 'action=mark_read&affirmation_id=' + encodeURIComponent(aid)
-            }).catch(function () { });
+            }).catch(function () {
+                msg.dataset.status = 'unread';
+                if (pill) {
+                    pill.classList.add('status--unread');
+                    pill.classList.remove('status--read');
+                    var textEl2 = pill.querySelector('span:last-child');
+                    if (textEl2) textEl2.textContent = 'Unread';
+                }
+            }).finally(function () {
+                delete msg.dataset.busy;
+            });
         }
     });
 </script>

@@ -1,3 +1,375 @@
+<?php
+// === Admin Dashboard (Cycle + Audit Log) ====================================
+// Notes:
+// - Users filter in the Audit Log tab matches actor_user_id when numeric,
+//   otherwise does a fuzzy match on users.email.
+// - "Type" maps directly to audit_logs.action values.
+// - CSV export for Audit Log is under ?export=audit using the same filters.
+// ============================================================================
+
+declare(strict_types=1);
+session_start();
+require __DIR__ . '/db_connection.php';
+
+if (empty($_SESSION['user_id'])) {
+    header('Location: login.php?err=unauthorized');
+    exit;
+}
+$userId = (int) ($_SESSION['user_id'] ?? 0);
+$role = (string) ($_SESSION['role'] ?? '');
+$allowedRoles = ['admin', 'manager']; // only admin/manager can open this page
+if (!in_array($role, $allowedRoles, true)) {
+    header('Location: login.php?err=forbidden');
+    exit;
+}
+
+date_default_timezone_set('Australia/Hobart');
+
+/* ---------------------------- helpers ------------------------------------ */
+function ymd_or_null(?string $s): ?string
+{
+    $s = trim((string) $s);
+    if ($s === '')
+        return null;
+    $dt = date_create($s);
+    return $dt ? $dt->format('Y-m-d') : null;
+}
+function weeks_from_dates(string $start, string $end): int
+{
+    $sd = new DateTime($start);
+    $ed = new DateTime($end);
+    $days = $sd->diff($ed)->days + 1;
+    return (int) ceil($days / 7);
+}
+function is_open_today(string $start, string $end): bool
+{
+    $today = new DateTime('today');
+    return ($today >= new DateTime($start) && $today <= new DateTime($end));
+}
+function csv_safe(string $s): string
+{
+    // normalize EOLs and escape quotes for RFC4180-style CSV
+    $s = str_replace(["\r\n", "\r"], "\n", $s);
+    $s = str_replace('"', '""', $s);
+    return "\"{$s}\"";
+}
+
+/* ---------------------------- flash state --------------------------------- */
+$flash = ['ok' => '', 'err' => ''];
+
+/* ============================== POST actions ============================== */
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+    $action = $_POST['action'] ?? '';
+
+    // --- Save Cycle (creates or updates active cycle, and appends to history)
+    if ($action === 'save_cycle') {
+        $startDate = ymd_or_null($_POST['start_date'] ?? '');
+        $weeks = (int) ($_POST['weeks'] ?? 0);
+
+        if (!$startDate) {
+            $flash['err'] = 'Invalid Start Date';
+        } elseif ($weeks < 1 || $weeks > 520) {
+            $flash['err'] = 'Weeks must be between 1 and 520';
+        } else {
+            $sd = new DateTime($startDate);
+            $ed = (clone $sd)->modify('+' . ($weeks * 7 - 1) . ' days');
+            $endDate = $ed->format('Y-m-d');
+
+            try {
+                $pdo->beginTransaction();
+
+                $id = $pdo->query("SELECT cycle_id FROM affirmation_cycle WHERE is_active=1 LIMIT 1")->fetchColumn();
+                if ($id) {
+                    $stmt = $pdo->prepare("UPDATE affirmation_cycle SET start_date=?, end_date=?, updated_at=NOW() WHERE cycle_id=? LIMIT 1");
+                    $stmt->execute([$startDate, $endDate, $id]);
+                } else {
+                    $stmt = $pdo->prepare("INSERT INTO affirmation_cycle (start_date,end_date,is_active,created_at) VALUES (?,?,1,NOW())");
+                    $stmt->execute([$startDate, $endDate]);
+                    $id = (int) $pdo->lastInsertId();
+                }
+
+                $isOpen = is_open_today($startDate, $endDate) ? 1 : 0;
+                $stmt = $pdo->prepare("INSERT INTO affirmation_cycle_history (start_date,end_date,weeks,is_open,saved_at,saved_by) VALUES (?,?,?,?,NOW(),?)");
+                $stmt->execute([$startDate, $endDate, $weeks, $isOpen, $userId]);
+
+                $pdo->commit();
+                $flash['ok'] = 'saved';
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction())
+                    $pdo->rollBack();
+                $flash['err'] = $e->getMessage();
+            }
+        }
+
+        header('Content-Type: application/json');
+        echo json_encode($flash['err'] ? ['ok' => false, 'msg' => $flash['err']] : ['ok' => true]);
+        exit;
+    }
+
+    // --- Clear all Cycle history (truncate history table)
+    if ($action === 'clear_history') {
+        try {
+            $pdo->exec("TRUNCATE TABLE affirmation_cycle_history");
+            $flash['ok'] = 'cleared';
+        } catch (Throwable $e) {
+            $flash['err'] = $e->getMessage();
+        }
+        header('Content-Type: application/json');
+        echo json_encode($flash['err'] ? ['ok' => false, 'msg' => $flash['err']] : ['ok' => true]);
+        exit;
+    }
+
+    // --- Audit Log search (returns JSON rows from audit_logs)
+    if ($action === 'audit_search') {
+        $start = ymd_or_null($_POST['start'] ?? '');
+        $end = ymd_or_null($_POST['end'] ?? '');
+        $userQ = trim((string) ($_POST['user_q'] ?? '')); // numeric -> actor_user_id ; text -> email LIKE
+        $type = trim((string) ($_POST['type'] ?? 'any'));
+
+        $where = [];
+        $args = [];
+
+        if ($start) {
+            $where[] = "al.created_at >= ?";
+            $args[] = $start . " 00:00:00";
+        }
+        if ($end) {
+            $where[] = "al.created_at <= ?";
+            $args[] = $end . " 23:59:59";
+        }
+
+        if ($userQ !== '') {
+            if (ctype_digit($userQ)) {
+                $where[] = "al.actor_user_id = ?";
+                $args[] = (int) $userQ;
+            } else {
+                // Only email exists in users table per screenshots
+                $where[] = "(u.email LIKE ?)";
+                $args[] = "%{$userQ}%";
+            }
+        }
+
+        if ($type !== '' && $type !== 'any') {
+            $where[] = "al.action = ?";
+            $args[] = $type;
+        }
+
+        $wsql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+        $sql = "SELECT 
+                    al.log_id,
+                    al.affirmation_id,
+                    al.actor_user_id,
+                    al.target_user_id,
+                    al.action,
+                    al.reason,
+                    al.created_at,
+                    u.email   AS actor_email,
+                    a.subject AS subject
+                FROM audit_logs al
+                LEFT JOIN users u        ON u.id = al.actor_user_id
+                LEFT JOIN affirmations a ON a.affirmation_id = al.affirmation_id
+                $wsql
+                ORDER BY al.created_at DESC
+                LIMIT 500";
+
+        try {
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($args);
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            $out = [];
+            foreach ($rows as $r) {
+                $out[] = [
+                    'id' => (int) $r['log_id'],
+                    'date' => (new DateTime($r['created_at']))->format('Y-m-d H:i'),
+                    'user' => $r['actor_email'] ?: ('#' . (int) $r['actor_user_id']),
+                    'action' => (string) $r['action'],
+                    'subject' => (string) ($r['subject'] ?? ''),
+                ];
+            }
+
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => true, 'rows' => $out]);
+        } catch (Throwable $e) {
+            header('Content-Type: application/json', true, 500);
+            echo json_encode(['ok' => false, 'msg' => 'Search failed: ' . $e->getMessage()]);
+        }
+        exit;
+    }
+}
+
+/* ============================== GET exports =============================== */
+
+// --- NEW: Export current Audit Log results as CSV (?export=audit)
+if (($_GET['export'] ?? '') === 'audit') {
+    $start = ymd_or_null($_GET['start'] ?? '');
+    $end = ymd_or_null($_GET['end'] ?? '');
+    $userQ = trim((string) ($_GET['user_q'] ?? ''));
+    $type = trim((string) ($_GET['type'] ?? 'any'));
+
+    $where = [];
+    $args = [];
+
+    if ($start) {
+        $where[] = "al.created_at >= ?";
+        $args[] = $start . " 00:00:00";
+    }
+    if ($end) {
+        $where[] = "al.created_at <= ?";
+        $args[] = $end . " 23:59:59";
+    }
+
+    if ($userQ !== '') {
+        if (ctype_digit($userQ)) {
+            $where[] = "al.actor_user_id = ?";
+            $args[] = (int) $userQ;
+        } else {
+            $where[] = "(u.email LIKE ?)";
+            $args[] = "%{$userQ}%";
+        }
+    }
+
+    if ($type !== '' && $type !== 'any') {
+        $where[] = "al.action = ?";
+        $args[] = $type;
+    }
+
+    $wsql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+    $sql = "SELECT 
+                al.created_at,
+                al.action,
+                al.affirmation_id,
+                al.actor_user_id,
+                al.target_user_id,
+                al.reason,
+                u.email  AS actor_email,
+                a.subject
+            FROM audit_logs al
+            LEFT JOIN users u        ON u.id = al.actor_user_id
+            LEFT JOIN affirmations a ON a.affirmation_id = al.affirmation_id
+            $wsql
+            ORDER BY al.created_at DESC
+            LIMIT 2000";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($args);
+
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="audit_logs_export.csv"');
+
+    echo "date,actor_email,action,subject,affirmation_id,actor_user_id,target_user_id,reason\n";
+    while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        echo implode(',', [
+            csv_safe((new DateTime($r['created_at']))->format('Y-m-d H:i:s')),
+            csv_safe((string) ($r['actor_email'] ?? '')),
+            csv_safe((string) $r['action']),
+            csv_safe((string) ($r['subject'] ?? '')),
+            (string) ($r['affirmation_id'] ?? ''),
+            (string) ($r['actor_user_id'] ?? ''),
+            (string) ($r['target_user_id'] ?? ''),
+            csv_safe((string) ($r['reason'] ?? '')),
+        ]) . "\n";
+    }
+    exit;
+}
+
+// --- Legacy: export affirmations (left as-is for compatibility)
+if (($_GET['export'] ?? '') === 'affirmations') {
+    $start = ymd_or_null($_GET['start'] ?? '');
+    $end = ymd_or_null($_GET['end'] ?? '');
+    $userQ = trim((string) ($_GET['user_q'] ?? ''));
+    $type = trim((string) ($_GET['type'] ?? 'any'));
+
+    $where = [];
+    $args = [];
+
+    if ($start) {
+        $where[] = "a.submitted_at >= ?";
+        $args[] = $start . " 00:00:00";
+    }
+    if ($end) {
+        $where[] = "a.submitted_at <= ?";
+        $args[] = $end . " 23:59:59";
+    }
+
+    if ($userQ !== '') {
+        if (ctype_digit($userQ)) {
+            $where[] = "a.sender_id = ?";
+            $args[] = (int) $userQ;
+        } else {
+            $where[] = "(u.full_name LIKE ? OR u.email LIKE ?)";
+            $args[] = "%{$userQ}%";
+            $args[] = "%{$userQ}%";
+        }
+    }
+
+    if ($type !== '' && $type !== 'any') {
+        if ($type === 'flagged') {
+            $where[] = "a.flag_reason IS NOT NULL AND a.flag_reason <> ''";
+        } elseif ($type === 'returned') {
+            $where[] = "a.return_reason IS NOT NULL AND a.return_reason <> ''";
+        } else {
+            $where[] = "a.status = ?";
+            $args[] = $type;
+        }
+    }
+
+    $wsql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+    $sql = "SELECT a.affirmation_id, a.sender_id, u.full_name AS sender_name, u.email AS sender_email,
+                   a.subject, a.message, a.status, a.flag_reason, a.return_reason, a.submitted_at
+            FROM affirmations a
+            LEFT JOIN users u ON u.user_id = a.sender_id
+            $wsql
+            ORDER BY a.submitted_at DESC
+            LIMIT 500";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($args);
+
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="affirmations_export.csv"');
+
+    echo "affirmation_id,date,user_name,user_email,status,action,subject,message,flag_reason,return_reason\n";
+    while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $action = (!empty($r['flag_reason'])) ? 'flagged'
+            : ((!empty($r['return_reason'])) ? 'returned'
+                : (string) $r['status']);
+        echo implode(',', [
+            (string) $r['affirmation_id'],
+            csv_safe((new DateTime($r['submitted_at']))->format('Y-m-d H:i:s')),
+            csv_safe((string) $r['sender_name']),
+            csv_safe((string) $r['sender_email']),
+            csv_safe((string) $r['status']),
+            csv_safe($action),
+            csv_safe((string) $r['subject']),
+            csv_safe((string) $r['message']),
+            csv_safe((string) $r['flag_reason']),
+            csv_safe((string) $r['return_reason']),
+        ]) . "\n";
+    }
+    exit;
+}
+
+/* ============================== page bootstrap ============================ */
+$current = $pdo->query("SELECT cycle_id,start_date,end_date,is_active FROM affirmation_cycle WHERE is_active=1 ORDER BY cycle_id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC) ?: null;
+$curStart = $current['start_date'] ?? '';
+$curEnd = $current['end_date'] ?? '';
+$curWeeks = ($curStart && $curEnd) ? weeks_from_dates($curStart, $curEnd) : 2;
+$curOpen = ($curStart && $curEnd) ? is_open_today($curStart, $curEnd) : false;
+
+$history = $pdo->query("SELECT id,start_date,end_date,weeks,is_open,saved_at FROM affirmation_cycle_history ORDER BY saved_at DESC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
+
+$summary = '';
+if ($curStart && $curEnd) {
+    $sd = new DateTime($curStart);
+    $ed = new DateTime($curEnd);
+    $summary = sprintf('%s → %s · %d days · %d weeks', $sd->format('Y-m-d'), $ed->format('Y-m-d'), $sd->diff($ed)->days + 1, $curWeeks);
+}
+?>
+
 <?php include 'header.php'; ?>
 
 <div class="body">
@@ -12,21 +384,19 @@
                     aria-controls="audit" aria-selected="false">Audit Log</button>
             </li>
         </ul>
-        <div class="tab-content" id="myTabContent">
-            <div class="tab-pane fade show active" id="cycle" role="tabpanel" aria-labelledby="cycle-tab">
-                <div class="cycle-card">
-                    <!-- Flash -->
-                    <div id="flash" class="alert alert-dismissible fade" role="alert" style="display:none;">
-                        <span id="flashText"></span>
-                        <button id="flashClose" type="button" class="close" aria-label="Close"><span
-                                aria-hidden="true">&times;</span></button>
-                    </div>
 
-                    <!-- Settings -->
+        <div class="tab-content" id="myTabContent">
+            <!-- Cycle Tab -->
+            <div class="tab-pane fade show active" id="cycle" role="tabpanel" aria-labelledby="cycle-tab">
+                <div class="mt-4">
+                    <!-- flash -->
+                    <div id="flashOk" class="alert alert-success d-none" role="alert"></div>
+                    <div id="flashErr" class="alert alert-danger d-none" role="alert"></div>
+
+                    <!-- Settings Card -->
                     <div class="card shadow-sm mb-4">
                         <div class="card-body">
                             <h5 class="mb-3">Cycle Settings</h5>
-
                             <div class="form-row">
                                 <div class="form-group col-md-6">
                                     <label for="startDate">Start Date</label>
@@ -34,163 +404,316 @@
                                 </div>
                                 <div class="form-group col-md-6">
                                     <label for="repeatWeeks">Repeat Rule (weeks)</label>
-                                    <input id="repeatWeeks" type="number" min="1" step="1" value="2"
+                                    <input id="repeatWeeks" type="number" min="1" max="520" step="1"
                                         class="form-control">
-                                    <small class="small-help">End date = start + (weeks × 7 − 1) days.</small>
-                                </div>
-                                <div class="form-group col-6 d-flex align-items-end">
-                                    <div class="btn-group w-100">
-                                        <button id="btnReset" class="btn btn-secondary mr-2">Reset</button>
-                                        <button id="btnSave" class="btn btn-primary">Save Cycle</button>
-                                    </div>
+                                    <small class="form-text text-muted">End date = start + (weeks × 7 – 1) days.</small>
                                 </div>
                             </div>
 
-                            <div class="d-flex flex-wrap align-items-center mb-2">
-                                <div class="custom-control custom-switch mr-auto mb-2">
-                                    <input type="checkbox" class="custom-control-input" id="cycleOpen" checked required>
-                                    <label class="custom-control-label" for="cycleOpen"><span id="openLabel">Current
-                                            Cycle:
-                                            OPEN</span></label>
+                            <div class="d-flex">
+                                <button id="btnReset" class="btn btn-secondary mr-2">RESET</button>
+                                <button id="btnSave" class="btn btn-warning">SAVE CYCLE</button>
+                                <div class="ml-auto d-flex align-items-center">
+                                    <span>Current Cycle:&nbsp;</span>
+                                    <span id="badgeOpen" class="badge badge-success mr-2 d-none">OPEN</span>
+                                    <span id="badgeClosed" class="badge badge-secondary mr-2 d-none">CLOSED</span>
                                 </div>
                             </div>
-
                             <hr>
-                            <div class="d-flex align-items-center">
-                                <div class="mr-3 text-muted">Summary:</div>
-                                <div id="summary" class="font-weight-bold">—</div>
-                            </div>
+                            <div><strong>Summary:</strong> <span id="summaryText">—</span></div>
                         </div>
                     </div>
 
-                    <!-- History -->
+                    <!-- History Card -->
                     <div class="card shadow-sm">
                         <div class="card-body">
                             <div class="d-flex align-items-center mb-2">
-                                <h5 class="mb-0 mr-auto">Cycle History</h5>
-                                <button id="btnClear" class="btn btn-outline-danger btn-sm">Clear History</button>
+                                <h5 class="mb-0">Cycle History</h5>
+                                <button id="btnClearHistory" class="btn btn-danger btn-sm ml-auto">CLEAR
+                                    HISTORY</button>
                             </div>
-
                             <div class="table-responsive">
-                                <table class="table table-sm table-striped mb-0">
+                                <table class="table table-hover">
                                     <thead class="thead-light">
                                         <tr>
-                                            <th>#</th>
+                                            <th style="width:72px;">#</th>
                                             <th>Start</th>
                                             <th>End (auto)</th>
                                             <th>Duration</th>
                                             <th>Weeks</th>
                                             <th>Open?</th>
                                             <th>Saved At</th>
-                                            <th></th>
                                         </tr>
                                     </thead>
-                                    <tbody id="historyBody">
-                                        <tr class="empty">
-                                            <td colspan="8" class="text-center py-4">No cycles saved yet.</td>
+                                    <tbody id="historyTbody">
+                                        <tr class="text-muted">
+                                            <td colspan="7">No cycles saved yet.</td>
                                         </tr>
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </div>
+
                 </div>
             </div>
+
+            <!-- Audit Log Tab -->
             <div class="tab-pane fade" id="audit" role="tabpanel" aria-labelledby="audit-tab">
-                <div class="main-content">
-                    <div class="row">
-                        <div class="col-lg-8 mt-3 mt-md-1 order-2 order-md-1">
-                            <div class="results-section">
-                                <h2 class="results-header">Results:</h2>
-
-                                <div class="table-container">
-                                    <table id="auditTable">
-                                        <thead>
-                                            <tr>
-                                                <th class="sortable" onclick="sortTable(0)">Date</th>
-                                                <th class="sortable" onclick="sortTable(1)">User</th>
-                                                <th class="sortable" onclick="sortTable(2)">Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="tableBody">
-                                            <tr>
-                                                <td>Aug 4<br>20:45</td>
-                                                <td>Admin</td>
-                                                <td>Sent</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Aug 3<br>23:22</td>
-                                                <td>Ava</td>
-                                                <td>Edited</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Aug 1<br>12:56</td>
-                                                <td>Ava</td>
-                                                <td>Edited</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                <div class="mt-4">
+                    <!-- Filters -->
+                    <div class="card shadow-sm mb-3">
+                        <div class="card-body">
+                            <h5 class="mb-3">Filters</h5>
+                            <div class="form-row">
+                                <div class="form-group col-md-3">
+                                    <label for="auditStart">Start Date</label>
+                                    <input id="auditStart" type="date" class="form-control">
                                 </div>
-
-                                <button class="btn btn-primary" onclick="exportCSV()">Export CSV</button>
+                                <div class="form-group col-md-3">
+                                    <label for="auditEnd">End Date</label>
+                                    <input id="auditEnd" type="date" class="form-control">
+                                </div>
+                                <div class="form-group col-md-3">
+                                    <label for="auditUser">Users</label>
+                                    <input id="auditUser" type="text" class="form-control"
+                                        placeholder="e.g. ava@school.edu">
+                                </div>
+                                <div class="form-group col-md-3">
+                                    <label for="auditType">Type</label>
+                                    <select id="auditType" class="form-control">
+                                        <option value="any">Any</option>
+                                        <option value="read">Read</option>
+                                        <option value="unread">Unread</option>
+                                        <option value="forwarded">Forwarded</option>
+                                        <option value="flagged">Flagged</option>
+                                        <option value="returned">Returned</option>
+                                    </select>
+                                </div>
                             </div>
-                        </div>
 
-                        <div class="col-lg-4 order-1 order-md-2">
-                            <div class="filters-section">
-                                <button class="filters-toggle">
-                                    <span class="toggleIcon">▼</span> Show Filters
-                                </button>
-
-                                <div class="filters-content" id="filtersContent">
-                                    <h2 class="filters-header">
-                                        <span>▼</span>
-                                        Filters:
-                                    </h2>
-
-                                    <div class="filter-group">
-                                        <label class="filter-label">Date:</label>
-                                        <div class="date-inputs">
-                                            <label class="filter-label">Start Date:
-                                                <input placeholder="Start Date" type="date" style="width: 130px;"
-                                                    class="filter-input" id="auditstartDate">
-                                            </label>
-                                            <label class="filter-label">End Date:
-                                                <input placeholder="End Date" type="date" style="width: 130px;"
-                                                    class="filter-input" id="auditendDate">
-                                            </label>
-                                        </div>
-                                    </div>
-
-                                    <div class="filter-group">
-                                        <label class="filter-label">Users:</label>
-                                        <input type="text" class="filter-input" id="userFilter"
-                                            placeholder="Enter user name...">
-                                    </div>
-
-                                    <div class="filter-group">
-                                        <label class="filter-label">Type:</label>
-                                        <select class="filter-input" id="typeFilter">
-                                            <option value="">Update</option>
-                                            <option value="sent">Sent</option>
-                                            <option value="edited">Edited</option>
-                                            <option value="deleted">Deleted</option>
-                                            <option value="created">Created</option>
-                                        </select>
-                                    </div>
-
-                                    <div class="filter-buttons">
-                                        <button class="btn btn-primary" onclick="resetFilters()">Reset</button>
-                                        <button class="btn btn-secondary" onclick="applyFilters()">Search</button>
-                                    </div>
-                                </div>
+                            <div class="d-flex">
+                                <button id="btnAuditReset" class="btn btn-secondary mr-2">Reset</button>
+                                <button id="btnAuditSearch" class="btn btn-primary">Search</button>
+                                <button id="btnAuditExport" class="btn btn-outline-info ml-auto">Export CSV</button>
                             </div>
                         </div>
                     </div>
-                </div>
+
+                    <!-- Results -->
+                    <div class="card shadow-sm">
+                        <div class="card-body">
+                            <h5 class="mb-3">Results</h5>
+                            <div class="table-responsive">
+                                <table class="table table-hover" id="auditTable">
+                                    <thead class="thead-light">
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>User</th>
+                                            <th>Action</th>
+                                            <th>Subject</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="auditResults">
+                                        <tr class="text-muted">
+                                            <td colspan="4">No results.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div><!-- /mt-4 -->
             </div>
         </div>
     </div>
 </div>
+
+<?php
+// Data for Cycle tab initial state
+$payload = [
+    'start' => $curStart,
+    'weeks' => (int) $curWeeks,
+    'open' => (bool) $curOpen,
+    'summary' => $summary,
+    'history' => array_map(function ($r) {
+        $sd = new DateTime($r['start_date']);
+        $ed = new DateTime($r['end_date']);
+        $days = $sd->diff($ed)->days + 1;
+        return [
+            'id' => (int) $r['id'],
+            'start' => $sd->format('Y-m-d'),
+            'end' => $ed->format('Y-m-d'),
+            'days' => $days,
+            'weeks' => (int) $r['weeks'],
+            'open' => (int) $r['is_open'] === 1,
+            'saved' => (new DateTime($r['saved_at']))->format('Y-m-d H:i:s'),
+        ];
+    }, $history),
+];
+?>
+<!-- === Page Scripts: wire both Cycle and Audit tabs ======================= -->
+<script>
+    (function () {
+        const init = <?php echo json_encode($payload, JSON_UNESCAPED_UNICODE); ?>;
+        const $ = (s) => document.querySelector(s);
+
+        /* -------- Cycle tab wiring -------- */
+        const startDate = $('#startDate');
+        const repeatWeeks = $('#repeatWeeks');
+        const badgeOpen = $('#badgeOpen');
+        const badgeClosed = $('#badgeClosed');
+        const summaryText = $('#summaryText');
+        const historyTbody = $('#historyTbody');
+        const btnReset = $('#btnReset');
+        const btnSave = $('#btnSave');
+        const btnClear = $('#btnClearHistory');
+        const flashOk = $('#flashOk');
+        const flashErr = $('#flashErr');
+
+        function setBadge(open) {
+            badgeOpen.classList.toggle('d-none', !open);
+            badgeClosed.classList.toggle('d-none', open);
+        }
+        function renderHistory(rows) {
+            historyTbody.innerHTML = '';
+            if (!rows || rows.length === 0) {
+                historyTbody.innerHTML = '<tr class="text-muted"><td colspan="7">No cycles saved yet.</td></tr>';
+                return;
+            }
+            rows.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                <td>${r.id}</td>
+                <td>${r.start}</td>
+                <td>${r.end}</td>
+                <td>${r.days} days</td>
+                <td>${r.weeks}</td>
+                <td>${r.open ? 'Yes' : 'No'}</td>
+                <td>${r.saved}</td>`;
+                historyTbody.appendChild(tr);
+            });
+        }
+        function setFlash(ok, msg) {
+            flashOk.classList.add('d-none');
+            flashErr.classList.add('d-none');
+            if (ok) { flashOk.textContent = msg || 'Saved'; flashOk.classList.remove('d-none'); }
+            else if (msg) { flashErr.textContent = msg; flashErr.classList.remove('d-none'); }
+        }
+
+        if (init.start) startDate.value = init.start;
+        if (init.weeks) repeatWeeks.value = init.weeks;
+        setBadge(!!init.open);
+        summaryText.textContent = init.summary || '—';
+        renderHistory(init.history);
+
+        btnReset.addEventListener('click', (e) => {
+            e.preventDefault();
+            startDate.value = init.start || '';
+            repeatWeeks.value = init.weeks || 2;
+            setFlash(true, 'Reset to current values');
+        });
+
+        btnSave.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const fd = new FormData();
+            fd.append('action', 'save_cycle');
+            fd.append('start_date', startDate.value || '');
+            fd.append('weeks', repeatWeeks.value || '0');
+            try {
+                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const j = await res.json();
+                if (!j.ok) { setFlash(false, j.msg || 'Save failed'); return; }
+                location.reload();
+            } catch (err) { setFlash(false, err.message || 'Network error'); }
+        });
+
+        btnClear.addEventListener('click', async (e) => {
+            e.preventDefault();
+            if (!confirm('Clear ALL cycle history?')) return;
+            const fd = new FormData(); fd.append('action', 'clear_history');
+            try {
+                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const j = await res.json();
+                if (!j.ok) { setFlash(false, j.msg || 'Clear failed'); return; }
+                renderHistory([]); setFlash(true, 'History cleared');
+            } catch (err) { setFlash(false, err.message || 'Network error'); }
+        });
+
+        /* -------- Audit tab wiring -------- */
+        const auditStart = $('#auditStart');
+        const auditEnd = $('#auditEnd');
+        const auditUser = $('#auditUser');
+        const auditType = $('#auditType');
+        const btnASearch = $('#btnAuditSearch');
+        const btnAReset = $('#btnAuditReset');
+        const btnAExport = $('#btnAuditExport');
+        const auditBody = $('#auditResults');
+
+        let lastQuery = null; // remember last search for export
+
+        function renderAudit(rows) {
+            auditBody.innerHTML = '';
+            if (!rows || rows.length === 0) {
+                auditBody.innerHTML = '<tr class="text-muted"><td colspan="4">No results.</td></tr>';
+                return;
+            }
+            rows.forEach(r => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                <td>${r.date}</td>
+                <td>${r.user}</td>
+                <td>${r.action || ''}</td>
+                <td>${r.subject ? r.subject : ''}</td>`;
+                auditBody.appendChild(tr);
+            });
+        }
+
+        async function doAuditSearch() {
+            const fd = new FormData();
+            fd.append('action', 'audit_search');
+            fd.append('start', auditStart.value || '');
+            fd.append('end', auditEnd.value || '');
+            fd.append('user_q', auditUser.value || '');
+            fd.append('type', auditType.value || 'any');
+
+            lastQuery = {
+                start: auditStart.value || '',
+                end: auditEnd.value || '',
+                user_q: auditUser.value || '',
+                type: auditType.value || 'any'
+            };
+
+            try {
+                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const j = await res.json();
+                if (!j.ok) { renderAudit([]); alert(j.msg || 'Search failed'); return; }
+                renderAudit(j.rows || []);
+            } catch (err) {
+                renderAudit([]); alert(err.message || 'Network error');
+            }
+        }
+
+        btnASearch.addEventListener('click', (e) => { e.preventDefault(); doAuditSearch(); });
+        btnAReset.addEventListener('click', (e) => {
+            e.preventDefault();
+            auditStart.value = ''; auditEnd.value = ''; auditUser.value = ''; auditType.value = 'any';
+            renderAudit([]);
+        });
+        btnAExport.addEventListener('click', (e) => {
+            e.preventDefault();
+            const q = lastQuery || {
+                start: auditStart.value || '',
+                end: auditEnd.value || '',
+                user_q: auditUser.value || '',
+                type: auditType.value || 'any'
+            };
+            // This navigates to a GET that streams CSV with the same filters.
+            const params = new URLSearchParams({ ...q, export: 'audit' });
+            window.location.href = location.pathname + '?' + params.toString();
+        });
+    })();
+</script>
+<!-- ====================================================================== -->
 
 <?php include 'footer.php'; ?>
