@@ -61,6 +61,20 @@ $flash = ['ok' => '', 'err' => ''];
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $action = $_POST['action'] ?? '';
 
+    // --- Force close current cycle (set is_active=0)
+    if ($action === 'force_close_cycle') {
+        try {
+            $stmt = $pdo->prepare("UPDATE affirmation_cycle SET is_active=0, updated_at=NOW() WHERE is_active=1");
+            $stmt->execute();
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            header('Content-Type: application/json', true, 500);
+            echo json_encode(['ok' => false, 'msg' => $e->getMessage()]);
+        }
+        exit;
+    }
+
     // --- Save Cycle (creates or updates active cycle, and appends to history)
     if ($action === 'save_cycle') {
         $startDate = ymd_or_null($_POST['start_date'] ?? '');
@@ -116,6 +130,26 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         }
         header('Content-Type: application/json');
         echo json_encode($flash['err'] ? ['ok' => false, 'msg' => $flash['err']] : ['ok' => true]);
+        exit;
+    }
+
+    // --- Delete a single cycle history row by id
+    if ($action === 'delete_history') {
+        $hid = (int) ($_POST['id'] ?? 0);
+        if ($hid <= 0) {
+            header('Content-Type: application/json', true, 400);
+            echo json_encode(['ok' => false, 'msg' => 'Invalid history id']);
+            exit;
+        }
+        try {
+            $stmt = $pdo->prepare("DELETE FROM affirmation_cycle_history WHERE id = ?");
+            $stmt->execute([$hid]);
+            header('Content-Type: application/json');
+            echo json_encode(['ok' => true]);
+        } catch (Throwable $e) {
+            header('Content-Type: application/json', true, 500);
+            echo json_encode(['ok' => false, 'msg' => $e->getMessage()]);
+        }
         exit;
     }
 
@@ -358,7 +392,7 @@ $current = $pdo->query("SELECT cycle_id,start_date,end_date,is_active FROM affir
 $curStart = $current['start_date'] ?? '';
 $curEnd = $current['end_date'] ?? '';
 $curWeeks = ($curStart && $curEnd) ? weeks_from_dates($curStart, $curEnd) : 2;
-$curOpen = ($curStart && $curEnd) ? is_open_today($curStart, $curEnd) : false;
+$curOpen = (bool) ($current['is_active'] ?? 0);
 
 $history = $pdo->query("SELECT id,start_date,end_date,weeks,is_open,saved_at FROM affirmation_cycle_history ORDER BY saved_at DESC, id DESC")->fetchAll(PDO::FETCH_ASSOC);
 
@@ -417,6 +451,8 @@ if ($curStart && $curEnd) {
                                     <span>Current Cycle:&nbsp;</span>
                                     <span id="badgeOpen" class="badge badge-success mr-2 d-none">OPEN</span>
                                     <span id="badgeClosed" class="badge badge-secondary mr-2 d-none">CLOSED</span>
+                                    <button id="btnForceClose" class="btn btn-sm btn-outline-danger d-none">Force
+                                        Close</button>
                                 </div>
                             </div>
                             <hr>
@@ -443,6 +479,7 @@ if ($curStart && $curEnd) {
                                             <th>Weeks</th>
                                             <th>Open?</th>
                                             <th>Saved At</th>
+                                            <th style="width:120px;">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody id="historyTbody">
@@ -570,11 +607,29 @@ $payload = [
         const btnClear = $('#btnClearHistory');
         const flashOk = $('#flashOk');
         const flashErr = $('#flashErr');
+        const btnForceClose = $('#btnForceClose');
 
         function setBadge(open) {
             badgeOpen.classList.toggle('d-none', !open);
             badgeClosed.classList.toggle('d-none', open);
+            btnForceClose.classList.toggle('d-none', !open);
         }
+
+        btnForceClose.addEventListener('click', async (e) => {
+            e.preventDefault();
+            if (!confirm('Are you sure to force close the current cycle?')) return;
+            const fd = new FormData();
+            fd.append('action', 'force_close_cycle');
+            try {
+                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const j = await res.json();
+                if (!j.ok) { alert(j.msg || 'Force close failed'); return; }
+                location.reload();
+            } catch (err) {
+                alert(err.message || 'Network error');
+            }
+        });
+
         function renderHistory(rows) {
             historyTbody.innerHTML = '';
             if (!rows || rows.length === 0) {
@@ -590,7 +645,12 @@ $payload = [
                 <td>${r.days} days</td>
                 <td>${r.weeks}</td>
                 <td>${r.open ? 'Yes' : 'No'}</td>
-                <td>${r.saved}</td>`;
+                <td>${r.saved}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-danger btn-del-history" data-id="${r.id}">
+                    Delete
+                    </button>
+                </td>`;
                 historyTbody.appendChild(tr);
             });
         }
@@ -639,6 +699,42 @@ $payload = [
                 renderHistory([]); setFlash(true, 'History cleared');
             } catch (err) { setFlash(false, err.message || 'Network error'); }
         });
+
+        // Delegate clicks on delete buttons in the history table
+        historyTbody.addEventListener('click', async (e) => {
+            const btn = e.target.closest('.btn-del-history');
+            if (!btn) return;
+            const id = btn.getAttribute('data-id');
+            if (!id) return;
+
+            if (!confirm('Delete this cycle history record?')) return;
+
+            const fd = new FormData();
+            fd.append('action', 'delete_history');
+            fd.append('id', id);
+
+            try {
+                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const j = await res.json();
+                if (!j.ok) {
+                    setFlash(false, j.msg || 'Delete failed');
+                    return;
+                }
+                // Remove row from DOM
+                const tr = btn.closest('tr');
+                if (tr) tr.remove();
+
+                // If table is empty, show placeholder row
+                if (!historyTbody.querySelector('tr')) {
+                    historyTbody.innerHTML = '<tr class="text-muted"><td colspan="8">No cycles saved yet.</td></tr>';
+                }
+
+                setFlash(true, 'History record deleted');
+            } catch (err) {
+                setFlash(false, err.message || 'Network error');
+            }
+        });
+
 
         /* -------- Audit tab wiring -------- */
         const auditStart = $('#auditStart');
