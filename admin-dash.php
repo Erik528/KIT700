@@ -10,6 +10,7 @@
 declare(strict_types=1);
 session_start();
 require __DIR__ . '/db_connection.php';
+require __DIR__ . '/mailer.php';
 
 if (empty($_SESSION['user_id'])) {
     header('Location: login.php?err=unauthorized');
@@ -26,6 +27,43 @@ if (!in_array($role, $allowedRoles, true)) {
 date_default_timezone_set('Australia/Hobart');
 
 /* ---------------------------- helpers ------------------------------------ */
+function base_url(): string
+{
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https://' : 'http://';
+    $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+    $path = rtrim(dirname($_SERVER['PHP_SELF'] ?? '/'), '/\\') . '/';
+    return $scheme . $host . $path;
+}
+
+function announce_cycle(PDO $pdo, string $type, ?string $startDate = null, ?string $endDate = null): int
+{
+    $submitUrl = base_url() . 'index.php';
+    if ($type === 'open') {
+        $subject = 'Affirmations cycle is OPEN';
+        $body = 'Hello,<br><br>The collegial affirmations submission window is now <strong>OPEN</strong>'
+            . ($startDate && $endDate ? (' from <strong>' . htmlspecialchars($startDate) . '</strong> to <strong>' . htmlspecialchars($endDate) . '</strong>') : '')
+            . '.<br>Please submit here: <a href="' . htmlspecialchars($submitUrl) . '">' . htmlspecialchars($submitUrl) . '</a><br><br>'
+            . 'Guidelines: one affirmation per cycle (subject + body).<br><br>Regards,<br>Affirmations Bot';
+    } else { // close
+        $subject = 'Affirmations cycle is now CLOSED';
+        $body = 'Hello,<br><br>The collegial affirmations submission window has been <strong>CLOSED</strong>'
+            . ($startDate && $endDate ? (' (' . htmlspecialchars($startDate) . ' → ' . htmlspecialchars($endDate) . ')') : '')
+            . '.<br>You will be notified when the next window opens.<br><br>Regards,<br>Affirmations Bot';
+    }
+
+    $stmt = $pdo->query("SELECT DISTINCT email FROM users WHERE email IS NOT NULL AND email <> ''");
+    $sent = 0;
+    while ($email = $stmt->fetchColumn()) {
+        if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            if (send_mail($email, $subject, $body)) {
+                $sent++;
+            }
+        }
+    }
+    return $sent;
+}
+
+
 function ymd_or_null(?string $s): ?string
 {
     $s = trim((string) $s);
@@ -64,8 +102,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     // --- Force close current cycle (set is_active=0)
     if ($action === 'force_close_cycle') {
         try {
+            $cur = $pdo->query("SELECT start_date, end_date FROM affirmation_cycle WHERE is_active=1 LIMIT 1")
+                ->fetch(PDO::FETCH_ASSOC) ?: null;
+
             $stmt = $pdo->prepare("UPDATE affirmation_cycle SET is_active=0, updated_at=NOW() WHERE is_active=1");
             $stmt->execute();
+
+            if ($stmt->rowCount() > 0) {
+                announce_cycle($pdo, 'close', $cur['start_date'] ?? null, $cur['end_date'] ?? null);
+            }
+
             header('Content-Type: application/json');
             echo json_encode(['ok' => true]);
         } catch (Throwable $e) {
@@ -90,24 +136,52 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             $endDate = $ed->format('Y-m-d');
 
             try {
+                $prev = $pdo->query("SELECT cycle_id,start_date,end_date,is_active 
+                                 FROM affirmation_cycle WHERE is_active=1 
+                                 ORDER BY cycle_id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC) ?: null;
+
+                $prevWasActive = (bool) ($prev['is_active'] ?? 0);
+                $prevOpenToday = false;
+                if ($prevWasActive && !empty($prev['start_date']) && !empty($prev['end_date'])) {
+                    $prevOpenToday = is_open_today($prev['start_date'], $prev['end_date']);
+                }
+
                 $pdo->beginTransaction();
 
-                $id = $pdo->query("SELECT cycle_id FROM affirmation_cycle WHERE is_active=1 LIMIT 1")->fetchColumn();
+                $id = $prev['cycle_id'] ?? null;
                 if ($id) {
-                    $stmt = $pdo->prepare("UPDATE affirmation_cycle SET start_date=?, end_date=?, updated_at=NOW() WHERE cycle_id=? LIMIT 1");
+                    $stmt = $pdo->prepare("UPDATE affirmation_cycle 
+                                       SET start_date=?, end_date=?, updated_at=NOW() 
+                                       WHERE cycle_id=? LIMIT 1");
                     $stmt->execute([$startDate, $endDate, $id]);
                 } else {
-                    $stmt = $pdo->prepare("INSERT INTO affirmation_cycle (start_date,end_date,is_active,created_at) VALUES (?,?,1,NOW())");
+                    $stmt = $pdo->prepare("INSERT INTO affirmation_cycle (start_date,end_date,is_active,created_at) 
+                                       VALUES (?,?,1,NOW())");
                     $stmt->execute([$startDate, $endDate]);
                     $id = (int) $pdo->lastInsertId();
                 }
 
                 $isOpen = is_open_today($startDate, $endDate) ? 1 : 0;
-                $stmt = $pdo->prepare("INSERT INTO affirmation_cycle_history (start_date,end_date,weeks,is_open,saved_at,saved_by) VALUES (?,?,?,?,NOW(),?)");
+                $stmt = $pdo->prepare("INSERT INTO affirmation_cycle_history 
+                                   (start_date,end_date,weeks,is_open,saved_at,saved_by) 
+                                   VALUES (?,?,?,?,NOW(),?)");
                 $stmt->execute([$startDate, $endDate, $weeks, $isOpen, $userId]);
 
                 $pdo->commit();
                 $flash['ok'] = 'saved';
+
+                $newOpenToday = ($isOpen === 1);
+
+                if (!$prevWasActive && $newOpenToday) {
+                    announce_cycle($pdo, 'open', $startDate, $endDate);
+                }
+                if ($prevWasActive && !$prevOpenToday && $newOpenToday) {
+                    announce_cycle($pdo, 'open', $startDate, $endDate);
+                }
+                if ($prevWasActive && $prevOpenToday && !$newOpenToday) {
+                    announce_cycle($pdo, 'close', $startDate, $endDate);
+                }
+
             } catch (Throwable $e) {
                 if ($pdo->inTransaction())
                     $pdo->rollBack();
@@ -119,6 +193,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         echo json_encode($flash['err'] ? ['ok' => false, 'msg' => $flash['err']] : ['ok' => true]);
         exit;
     }
+
 
     // --- Clear all Cycle history (truncate history table)
     if ($action === 'clear_history') {
