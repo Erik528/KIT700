@@ -51,18 +51,30 @@ try {
  */
 function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
 {
-    $sql = "SELECT 1
-            FROM affirmations a
-            WHERE a.affirmation_id = :aid
-              AND a.sender_id IN (SELECT staff_id FROM manager_staff WHERE manager_id = :mid)";
+    $sql = "
+        SELECT 1
+        FROM affirmations a
+        JOIN manager_staff ms_r
+          ON ms_r.staff_id = a.recipient_id
+         AND ms_r.manager_id = :mid_rec
+        LEFT JOIN manager_staff ms_s
+          ON ms_s.staff_id = a.sender_id
+         AND ms_s.manager_id = :mid_send
+        WHERE a.affirmation_id = :aid
+          AND ms_s.staff_id IS NULL
+        LIMIT 1
+    ";
     $st = $pdo->prepare($sql);
-    $st->execute(['aid' => $aid, 'mid' => $managerId]);
+    $st->execute([
+        'aid' => $aid,
+        'mid_rec' => $managerId,
+        'mid_send' => $managerId,
+    ]);
     if (!$st->fetchColumn()) {
         http_response_code(403);
         exit('Forbidden');
     }
 }
-
 /**
  * Insert a row into audit_logs for the given affirmation/action.
  * - actor_user_id = manager performing the action
@@ -132,15 +144,28 @@ if ($action) {
         exit;
     }
 
-    // Delete — write an audit row FIRST, then delete the record.
+    // Delete — write an audit row FIRST, then delete the record (children first).
     if ($action === 'delete') {
-        audit_log($pdo, $aid, $managerId, 'deleted', null);
+        try {
+            $pdo->beginTransaction();
 
-        $st = $pdo->prepare("DELETE FROM affirmations WHERE affirmation_id=:aid");
-        $st->execute(['aid' => $aid]);
+            audit_log($pdo, $aid, $managerId, 'deleted', null);
 
-        header('Location: manager-dash.php?ok=deleted');
-        exit;
+            $pdo->prepare("DELETE FROM mail_logs WHERE affirmation_id = :aid")->execute(['aid' => $aid]);
+            $pdo->prepare("DELETE FROM audit_logs WHERE affirmation_id = :aid")->execute(['aid' => $aid]);
+
+            $pdo->prepare("DELETE FROM affirmations WHERE affirmation_id = :aid")->execute(['aid' => $aid]);
+
+            $pdo->commit();
+            header('Location: manager-dash.php?ok=deleted');
+            exit;
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction())
+                $pdo->rollBack();
+            http_response_code(400);
+            echo "Delete failed: " . htmlspecialchars($e->getMessage());
+            exit;
+        }
     }
 }
 
@@ -158,11 +183,20 @@ $teamMembers = $st->fetchAll(PDO::FETCH_ASSOC);
 $st = $pdo->prepare("
   SELECT a.*, ur.email AS recipient_email
   FROM affirmations a
-  JOIN users ur ON ur.id=a.recipient_id
-  WHERE a.sender_id IN (SELECT staff_id FROM manager_staff WHERE manager_id=:mid)
+  JOIN users ur ON ur.id = a.recipient_id
+  JOIN manager_staff ms_r
+    ON ms_r.staff_id = a.recipient_id
+   AND ms_r.manager_id = :mid_rec
+  LEFT JOIN manager_staff ms_s
+    ON ms_s.staff_id = a.sender_id
+   AND ms_s.manager_id = :mid_send
+  WHERE ms_s.staff_id IS NULL
   ORDER BY a.submitted_at DESC
 ");
-$st->execute(['mid' => $managerId]);
+$st->execute([
+    'mid_rec' => $managerId,
+    'mid_send' => $managerId,
+]);
 $teamAffirmations = $st->fetchAll(PDO::FETCH_ASSOC);
 
 include 'header.php';

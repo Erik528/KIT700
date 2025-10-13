@@ -192,28 +192,20 @@ if ($action) {
     }
 }
 
-// --- Fetch messages for HR (also include shared HR inbox id=15)
-$extraHrIds = [15];
-$params = ['hrId' => $hrId];
-$placeholders = [':hrId'];
-
-foreach ($extraHrIds as $idx => $xid) {
-    $key = ':x' . $idx;
-    $placeholders[] = $key;
-    $params['x' . $idx] = $xid;
-}
-
-$sql = "
-    SELECT a.*, us.email AS sender_email, ur.email AS recipient_email
+// --- Fetch messages for HR 
+$messages = $pdo->prepare("
+    SELECT 
+        a.*,
+        us.email  AS sender_email,
+        COALESCE(ur.email, 'Unknown') AS recipient_email
     FROM affirmations a
-    JOIN users us ON us.id = a.sender_id
-    LEFT JOIN users ur ON ur.id = a.recipient_id   
-    WHERE a.recipient_id IN (" . implode(',', $placeholders) . ")
+    JOIN users us       ON us.id = a.sender_id
+    LEFT JOIN users ur  ON ur.id = a.recipient_id   
+    WHERE (a.recipient_id = :hrId OR a.recipient_id = 15)  
     ORDER BY a.submitted_at DESC
-";
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+");
+$messages->execute(['hrId' => $hrId]);
+$messages = $messages->fetchAll(PDO::FETCH_ASSOC);
 
 // --- Fetch all recipients (except HR) for forwarding 
 $recipients = $pdo->query("SELECT id,email FROM users WHERE role!='hr' ORDER BY email")->fetchAll(PDO::FETCH_ASSOC);

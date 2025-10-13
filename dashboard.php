@@ -14,19 +14,33 @@ $stmt = $pdo->query("SELECT * FROM affirmation_cycle WHERE is_active=1 LIMIT 1")
 $currentCycle = $stmt->fetch();
 $cycle_id = $currentCycle['cycle_id'] ?? null;
 
-// --- Handle new affirmation submission
 $success = false;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $recipient_id = (isset($_POST['recipient_id']) && $_POST['recipient_id'] !== '')
+    $recipient_id = isset($_POST['recipient_id']) && $_POST['recipient_id'] !== ''
         ? (int) $_POST['recipient_id']
         : 15;
-    $subject = $_POST['subject'];
-    $message = $_POST['message'];
 
-    // Insert affirmation into DB
+    $subject = trim((string) ($_POST['subject'] ?? ''));
+    $message = trim((string) ($_POST['message'] ?? ''));
+
+    if ($recipient_id !== 15) {
+        $stmtChk = $pdo->prepare("
+            SELECT role
+            FROM users
+            WHERE id = :rid
+            LIMIT 1
+        ");
+        $stmtChk->execute(['rid' => $recipient_id]);
+        $role = $stmtChk->fetchColumn();
+
+        $allowed = ['manager', 'hr'];
+        if (!$role || !in_array($role, $allowed, true)) {
+            $recipient_id = 15;
+        }
+    }
+
     $stmt = $pdo->prepare("
-        INSERT INTO affirmations 
-        (sender_id, recipient_id, cycle_id, subject, message) 
+        INSERT INTO affirmations (sender_id, recipient_id, cycle_id, subject, message)
         VALUES (:sender_id, :recipient_id, :cycle_id, :subject, :message)
     ");
     $stmt->execute([
@@ -37,9 +51,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'message' => $message
     ]);
 
-    // Set success flag for message
     $success = true;
 }
+
 
 // --- Fetch affirmation history (only sent by this user)
 $affirmations = [];
