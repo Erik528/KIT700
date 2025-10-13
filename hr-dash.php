@@ -2,413 +2,476 @@
 declare(strict_types=1);
 session_start();
 require 'db_connection.php';
+require_once 'mailer.php';  // ✅ Added to send emails
 
-// --- Guard: only HR can access
+// --- Guard: only HR can access 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'hr') {
     header('Location: login.php?err=unauthorized');
     exit;
 }
 $hrId = (int) $_SESSION['user_id'];
 
-// --- Actions: mark_read / flag / delete
+// --- Ensure affirmations table has status/flag_reason/return_reason columns 
+try {
+    $hasStatus = $pdo->query("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='affirmations' AND COLUMN_NAME='status'")->fetchColumn();
+    $hasReason = $pdo->query("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='affirmations' AND COLUMN_NAME='flag_reason'")->fetchColumn();
+    $hasReturn = $pdo->query("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='affirmations' AND COLUMN_NAME='return_reason'")->fetchColumn();
+
+    if (!$hasStatus) {
+        $pdo->exec("ALTER TABLE affirmations ADD COLUMN status ENUM('unread','read','forwarded','flagged','sent_back') NOT NULL DEFAULT 'unread' AFTER message");
+    }
+    if (!$hasReason) {
+        $pdo->exec("ALTER TABLE affirmations ADD COLUMN flag_reason TEXT NULL AFTER status");
+    }
+    if (!$hasReturn) {
+        $pdo->exec("ALTER TABLE affirmations ADD COLUMN return_reason TEXT NULL AFTER flag_reason");
+    }
+} catch (Throwable $e) {
+    // ignore
+}
+
+// --- Handle actions: mark_read / forward / flag / send_back 
 $action = $_POST['action'] ?? '';
 if ($action) {
-    $mid = (int) ($_POST['message_id'] ?? 0);
-    if ($mid <= 0) { http_response_code(400); exit('Bad Request'); }
+    $aid = (int) ($_POST['affirmation_id'] ?? 0);
+    if ($aid <= 0) {
+        http_response_code(400);
+        exit('Bad Request');
+    }
 
-    // Fetch message to ensure it belongs to this HR
-    $st = $pdo->prepare("SELECT status FROM messages WHERE message_id=:mid AND recipient_id=:hr");
-    $st->execute(['mid'=>$mid,'hr'=>$hrId]);
-    $msg = $st->fetch(PDO::FETCH_ASSOC);
-    if (!$msg) { http_response_code(403); exit('Forbidden'); }
+    // ✅ Fetch affirmation without strict recipient check
+    $stmt = $pdo->prepare("SELECT * FROM affirmations WHERE affirmation_id=:aid");
+    $stmt->execute(['aid' => $aid]);
+    $msg = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $status = strtolower((string)$msg['status'] ?? 'unread');
+    if (!$msg) {
+        http_response_code(403);
+        exit('Forbidden');
+    }
 
-    if ($action === 'mark_read' && $status==='unread') {
-        $pdo->prepare("UPDATE messages SET status='read' WHERE message_id=:mid")->execute(['mid'=>$mid]);
+    $currentStatus = strtolower($msg['status'] ?? 'unread');
+
+    if ($action === 'mark_read') {
+        if ($currentStatus === 'unread') {
+            $pdo->prepare("UPDATE affirmations SET status='read' WHERE affirmation_id=:aid")->execute(['aid' => $aid]);
+        }
         exit('OK');
     }
 
-    if ($action === 'flag' && $status!=='flagged' && $status!=='forwarded') {
-        $reason = trim($_POST['reasons'] ?? '') ?: null;
-        $pdo->prepare("UPDATE messages SET status='flagged', flag_reason=:r WHERE message_id=:mid")
-            ->execute(['mid'=>$mid,'r'=>$reason]);
-        header('Location: hr-dash.php?ok=flagged');
+    if ($action === 'forward') {
+        if (in_array($currentStatus, ['forwarded', 'flagged', 'sent_back'])) {
+            header('Location: hr-dash.php?err=locked');
+            exit;
+        }
+
+        $recipientId = (int) ($_POST['recipient_id'] ?? 0);
+        if ($recipientId <= 0) {
+            header('Location: hr-dash.php?err=no_recipient');
+            exit;
+        }
+
+        // ✅ Update DB to show it's forwarded
+        $pdo->prepare("UPDATE affirmations SET recipient_id=:rid, status='forwarded' WHERE affirmation_id=:aid")
+            ->execute(['rid' => $recipientId, 'aid' => $aid]);
+
+        // ✅ Fetch recipient email
+        $stmtUser = $pdo->prepare("SELECT email FROM users WHERE id=:id LIMIT 1");
+        $stmtUser->execute(['id' => $recipientId]);
+        $recipientEmail = $stmtUser->fetchColumn();
+
+        // ✅ Send email notification if recipient email exists
+        if ($recipientEmail && filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+            $subject = "Forwarded Affirmation: " . htmlspecialchars($msg['subject'] ?? 'No Subject');
+            $body = "
+                <p>Hello,</p>
+                <p>An affirmation has been forwarded to you by the HR team.</p>
+                <p><strong>Subject:</strong> " . htmlspecialchars($msg['subject'] ?? 'No Subject') . "</p>
+                <p><strong>Message:</strong></p>
+                <blockquote>" . nl2br(htmlspecialchars($msg['message'] ?? '')) . "</blockquote>
+                <p>Please log in to your dashboard to view and respond.</p>
+                <p>– HR Team</p>
+            ";
+            send_mail($recipientEmail, $subject, $body);
+        }
+
+        // ✅ Log mail in mail_logs
+        try {
+            $stmtLog = $pdo->prepare("
+                INSERT INTO mail_logs (affirmation_id, email, status, message, created_at)
+                VALUES (:aid, :email, 'sent', :msg, NOW())
+            ");
+            $stmtLog->execute([
+                'aid' => $aid,
+                'email' => $recipientEmail,
+                'msg' => 'Sent back notification email to sender'
+            ]);
+        } catch (Throwable $e) {
+            error_log('MAIL LOG ERROR: ' . $e->getMessage());
+        }
+
+        header('Location: hr-dash.php?ok=forwarded_email');
         exit;
     }
 
-    if ($action === 'delete') {
-        $pdo->prepare("DELETE FROM messages WHERE message_id=:mid")->execute(['mid'=>$mid]);
-        header('Location: hr-dash.php?ok=deleted');
+    if ($action === 'send_back') {
+        if (in_array($currentStatus, ['flagged', 'forwarded', 'sent_back'])) {
+            header('Location: hr-dash.php?err=locked');
+            exit;
+        }
+
+        $reason = trim((string) ($_POST['reason'] ?? null)) ?: null;
+        $senderId = (int) $msg['sender_id'];
+
+        // ✅ Always fetch sender’s email directly from DB
+        $stmtUser = $pdo->prepare("SELECT email FROM users WHERE id = :id LIMIT 1");
+        $stmtUser->execute(['id' => $senderId]);
+        $senderEmail = $stmtUser->fetchColumn();
+
+        // ✅ Double-check that the fetched email matches the sender
+        if (!$senderEmail || !filter_var($senderEmail, FILTER_VALIDATE_EMAIL)) {
+            error_log("❌ Invalid sender email for affirmation #{$aid}");
+            header('Location: hr-dash.php?err=no_sender_email');
+            exit;
+        }
+
+        // ✅ Update affirmation record
+        $pdo->prepare("
+            UPDATE affirmations 
+            SET status='sent_back', return_reason=:r 
+            WHERE affirmation_id=:aid
+        ")->execute([
+                    'r' => $reason,
+                    'aid' => $aid
+                ]);
+
+        // ✅ Send email directly to the original sender only
+        $subject = "Affirmation Sent Back by HR: " . htmlspecialchars($msg['subject'] ?? 'No Subject');
+        $body = "
+            <p>Hello,</p>
+            <p>Your affirmation has been sent back by the HR team for review.</p>
+            <p><strong>Reason provided:</strong></p>
+            <blockquote>" . nl2br(htmlspecialchars($reason ?? 'No reason provided')) . "</blockquote>
+            <p><strong>Your original message:</strong></p>
+            <blockquote>" . nl2br(htmlspecialchars($msg['message'] ?? '')) . "</blockquote>
+            <p>Please log in to your dashboard to make corrections or resubmit.</p>
+            <p>– HR Team</p>
+        ";
+        send_mail($senderEmail, $subject, $body);
+
+        // ✅ Log mail in mail_logs
+        try {
+            $stmtLog = $pdo->prepare("
+                INSERT INTO mail_logs (affirmation_id, email, status, message, created_at)
+                VALUES (:aid, :email, 'sent', :msg, NOW())
+            ");
+            $stmtLog->execute([
+                'aid' => $aid,
+                'email' => $senderEmail,
+                'msg' => 'Sent back notification email to sender'
+            ]);
+        } catch (Throwable $e) {
+            error_log('MAIL LOG ERROR: ' . $e->getMessage());
+        }
+
+        header('Location: hr-dash.php?ok=sent_back');
+        exit;
+    }
+
+
+
+    if ($action === 'flag') {
+        if (in_array($currentStatus, ['flagged', 'forwarded', 'sent_back'])) {
+            header('Location: hr-dash.php?err=locked');
+            exit;
+        }
+        $reason = trim((string) ($_POST['reasons'] ?? null)) ?: null;
+        $pdo->prepare("UPDATE affirmations SET status='flagged', flag_reason=:r WHERE affirmation_id=:aid")
+            ->execute(['r' => $reason, 'aid' => $aid]);
+        header('Location: hr-dash.php?ok=flagged');
         exit;
     }
 }
 
-// --- Fetch messages for this HR
-$st = $pdo->prepare("
-    SELECT m.*, u.email AS sender_email
-    FROM messages m
-    JOIN users u ON u.id = m.sender_id
-    WHERE m.recipient_id=:hr
-    ORDER BY m.created_at DESC
-");
-$st->execute(['hr'=>$hrId]);
-$messages = $st->fetchAll(PDO::FETCH_ASSOC);
+// --- Fetch messages for HR (also include shared HR inbox id=15)
+$extraHrIds = [15];
+$params = ['hrId' => $hrId];
+$placeholders = [':hrId'];
+
+foreach ($extraHrIds as $idx => $xid) {
+    $key = ':x' . $idx;
+    $placeholders[] = $key;
+    $params['x' . $idx] = $xid;
+}
+
+$sql = "
+    SELECT a.*, us.email AS sender_email, ur.email AS recipient_email
+    FROM affirmations a
+    JOIN users us ON us.id = a.sender_id
+    LEFT JOIN users ur ON ur.id = a.recipient_id   
+    WHERE a.recipient_id IN (" . implode(',', $placeholders) . ")
+    ORDER BY a.submitted_at DESC
+";
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
+$messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// --- Fetch all recipients (except HR) for forwarding 
+$recipients = $pdo->query("SELECT id,email FROM users WHERE role!='hr' ORDER BY email")->fetchAll(PDO::FETCH_ASSOC);
 
 include 'header.php';
 ?>
 
+<!-- ✅ Success alert for Send Back -->
+<?php if (!empty($_GET['ok']) && $_GET['ok'] === 'sent_back'): ?>
+    <div class="container mt-3">
+        <div class="alert alert-success alert-dismissible fade show" role="alert" id="sendBackSuccessAlert">
+            <strong>Success!</strong> Message sent back successfully
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+<?php endif; ?>
+
+<!-- ✅ Success alert for Forwarded Email -->
+<?php if (!empty($_GET['ok']) && $_GET['ok'] === 'forwarded_email'): ?>
+    <div class="container mt-3">
+        <div class="alert alert-success alert-dismissible fade show" role="alert" id="forwardSuccessAlert">
+            <strong>Success!</strong> Message forwarded and email sent successfully
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+<?php endif; ?>
+
+<!-- ✅ Success alert for Send Back -->
+<?php if (!empty($_GET['ok']) && $_GET['ok'] === 'sent_back'): ?>
+    <div class="container mt-3">
+        <div class="alert alert-success alert-dismissible fade show" role="alert" id="sendBackSuccessAlert">
+            <strong>Success!</strong> Message sent back successfully
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    </div>
+<?php endif; ?>
+
 <div class="body">
     <div class="inbox mt-3 mt-lg-5">
         <div class="container">
-            <?php foreach ($messages as $msg): 
-                $mid = (int)$msg['message_id'];
+            <?php foreach ($messages as $msg):
+                $aid = (int) $msg['affirmation_id'];
                 $status = strtolower($msg['status'] ?? 'unread');
-                $statusClass = 'status--'.$status;
-            ?>
-            <article class="msg" data-mid="<?= $mid ?>" data-status="<?= htmlspecialchars($status) ?>" aria-expanded="false">
-                <div class="msg__head" role="button" aria-controls="msg-<?= $mid ?>-details" aria-expanded="false">
-                    <div class="avatar"><?= strtoupper(substr($msg['sender_email'],0,1)) ?></div>
-                    <div class="text">
-                        <div class="to-line">to <b><?= htmlspecialchars($_SESSION['email'] ?? 'HR') ?></b></div>
-                        <div class="subject"><?= htmlspecialchars($msg['subject'] ?? 'No Subject') ?></div>
-                        <div class="snippet"><?= htmlspecialchars(mb_strimwidth($msg['message'] ?? '',0,160,'…')) ?></div>
-                    </div>
-                    <div class="state">
-                        <div class="status status-pill <?= $statusClass ?>" title="<?= ucfirst($status) ?>">
-                            <span class="dot"></span><span><?= ucfirst($status) ?></span>
+                $statusClass = 'status--' . $status;
+                ?>
+                <article class="msg" data-aid="<?= $aid ?>" data-status="<?= htmlspecialchars($status) ?>"
+                    aria-expanded="false">
+                    <div class="msg__head" role="button" aria-controls="msg-<?= $aid ?>-details">
+                        <!-- ✅ Avatar shows sender's initial only -->
+                        <div class="avatar"><?= strtoupper(substr($msg['sender_email'], 0, 1)) ?></div>
+                        <div class="text">
+                            <div class="to-line">
+                                <!-- ✅ Only show recipient (manager) email -->
+                                <span class="to"><?= htmlspecialchars($msg['recipient_email']) ?></span>
+                            </div>
+                            <div class="subject"><?= htmlspecialchars($msg['subject'] ?? 'No Subject') ?></div>
+                            <div class="snippet"><?= htmlspecialchars(mb_strimwidth($msg['message'] ?? '', 0, 160, '…')) ?>
+                            </div>
                         </div>
-                        <div class="meta" aria-label="Date">
-                            <i class="fa-solid fa-clock"></i>
-                            <span><?= date('M d', strtotime($msg['created_at'] ?? 'now')) ?></span>
+                        <div class="state">
+                            <div class="status status-pill <?= $statusClass ?>">
+                                <span class="dot"></span>
+                                <span><?= ucfirst($status) ?></span>
+                            </div>
+                            <div class="meta"><?= date('M d', strtotime($msg['submitted_at'] ?? 'now')) ?></div>
+                            <button class="arrow-btn" type="button"><i class="fa-solid fa-chevron-down"></i></button>
                         </div>
-                        <button class="arrow-btn" type="button" aria-label="Toggle details">
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </button>
                     </div>
-                </div>
-
-                <div class="msg__details" id="msg-<?= $mid ?>-details">
-                    <p class="details-text"><?= nl2br(htmlspecialchars($msg['message'])) ?></p>
-
-                    <?php if($status==='flagged' && !empty($msg['flag_reason'])): ?>
-                        <div class="alert alert-warning py-2 px-3 mb-3">
-                            <strong>Flag reasons:</strong> <?= htmlspecialchars($msg['flag_reason']) ?>
+                    <div class="msg__details" id="msg-<?= $aid ?>-details">
+                        <p class="details-text"><?= nl2br(htmlspecialchars($msg['message'])) ?></p>
+                        <?php if ($status === 'flagged' && !empty($msg['flag_reason'])): ?>
+                            <div class="alert alert-warning py-2 px-3 mb-3">
+                                <strong>Flag reasons:</strong> <?= htmlspecialchars($msg['flag_reason']) ?>
+                            </div>
+                        <?php endif; ?>
+                        <?php if ($status === 'sent_back' && !empty($msg['return_reason'])): ?>
+                            <div class="alert alert-secondary py-2 px-3 mb-3">
+                                <strong>Return reason:</strong> <?= htmlspecialchars($msg['return_reason']) ?>
+                            </div>
+                        <?php endif; ?>
+                        <div class="actions">
+                            <!-- Forward form -->
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="action" value="forward">
+                                <input type="hidden" name="affirmation_id" value="<?= $aid ?>">
+                                <select name="recipient_id" class="form-control mb-3" required>
+                                    <option value="">Select recipient</option>
+                                    <?php foreach ($recipients as $r): ?>
+                                        <option value="<?= $r['id'] ?>"><?= htmlspecialchars($r['email']) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <button type="submit" class="btn btn-secondary btn-forward">Forward</button>
+                            </form>
+                            <!-- Send Back -->
+                            <button type="button" class="btn btn-danger action-sendback" data-toggle="modal"
+                                data-target="#sendBackModal" data-aid="<?= $aid ?>"> Send Back </button>
+                            <!-- Flag -->
+                            <button type="button" class="btn btn-warning action-flag" data-toggle="modal"
+                                data-target="#flagModal" data-aid="<?= $aid ?>"> Flag as Abuse </button>
                         </div>
-                    <?php endif; ?>
-
-                    <div class="actions">
-                        <button class="btn btn-warning btn-lg action-flag" type="button" data-toggle="modal" data-target="#flagModal" data-mid="<?= $mid ?>">Flag as Abuse</button>
                     </div>
-                </div>
-            </article>
+                </article>
             <?php endforeach; ?>
         </div>
     </div>
-
-    <!-- Keep all modals from your existing HTML here: flagModal, reportedModal, forwardModal, confirmModal, etc. -->
 </div>
-<div class="body">
 
-    <div class="inbox mt-3 mt-lg-5">
-        <div class="container">
-            <article class="msg" aria-expanded="false">
-                <div class="msg__head" role="button" aria-controls="m1-details" aria-expanded="false">
-                    <div class="avatar">E</div>
-
-                    <div class="text">
-                        <div class="to-line">to <b>Erik</b></div>
-                        <div class="subject">Preview of Subject</div>
-                        <div class="snippet">Lorem ipsum dolor sit amet, id sententiae intellegam ius, his et facer
-                            reformidans intellegabat…</div>
-                    </div>
-
-                    <div class="state">
-                        <div class="status status--unread" title="Unread">
-                            <span class="dot" aria-hidden="true"></span><span>Unread</span>
-                        </div>
-                        <!-- Example alternatives:
-                            <div class="status status--forwarded"><span class="dot"></span><span>Forwarded</span></div>
-                            <div class="status status--flagged"><span class="dot"></span><span>Flagged</span></div>
-                            -->
-
-                        <div class="meta" aria-label="Date">
-                            <!-- clock -->
-                            <i class="fa-solid fa-clock"></i>
-                            <span>Aug&nbsp;4</span>
-                        </div>
-
-                        <button class="arrow-btn" type="button" aria-label="Toggle details">
-                            <!-- chevron down -->
-                            <i class="fa-solid fa-chevron-down"></i>
-                        </button>
-                    </div>
-
+<!-- Flag Modal -->
+<div class="modal fade" id="flagModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header strip">
+                <div class="bar bar-yellow w-100 d-flex justify-content-between align-items-center px-2">
+                    <h5 class="mb-0">Flag Message</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
                 </div>
-                <div class="msg__details" id="m1-details">
-                    <p class="details-text">
-                        Lorem ipsum dolor sit amet, has ea vidit dolorem voluptaria, ut sea delenit vivendum.
-                        Veri detraxit honestatis ei mel, paulo feugiat te has. Pri aeque aliquando tincidunt ei.
-                        Mentitum persequeris at his, democritum intellegam ex est, qui graece prodesset repudiandae.
-                    </p>
-                    <div class="actions">
-                        <button class="btn btn-outline" type="button" id="btnBack">Send Back</button>
-                        <button class="btn btn-tertiary" type="button" data-toggle="modal" data-target="#flagModal">Flag
-                            as Abuse</button>
-                        <button class="btn btn-primary" type="button" id="btnForward">Forward</button>
-                    </div>
-
-                    <!-- Accordion (Assign Manager + Log) -->
-                    <div id="m1-accordion" class="mt-3">
-                        <!-- Assign Manager -->
-                        <div class="border-bottom rounded mb-2">
-                            <button
-                                class="btn btn-link d-flex justify-content-between align-items-center w-100 px-3 py-2"
-                                data-toggle="collapse" data-target="#m1-assign" aria-expanded="false"
-                                aria-controls="m1-assign">
-                                <span class="font-weight-bold">Assign Manager:</span>
-                                <i class="fa fa-chevron-down"></i>
-                            </button>
-
-                            <div id="m1-assign" class="collapse" data-parent="#m1-accordion">
-                                <div class="px-3 pb-3">
-                                    <!-- Search box -->
-                                    <input type="text" id="m1-manager-filter" class="form-control mb-2"
-                                        placeholder="Search managers…">
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Log -->
-                        <div class="border-bottom rounded">
-                            <button
-                                class="btn btn-link d-flex justify-content-between align-items-center w-100 px-3 py-2"
-                                data-toggle="collapse" data-target="#m1-log" aria-expanded="false"
-                                aria-controls="m1-log">
-                                <span class="font-weight-bold">Log:</span>
-                                <i class="fa fa-chevron-down"></i>
-                            </button>
-
-                            <div id="m1-log" class="collapse" data-parent="#m1-accordion">
-                                <div class="px-3 pb-3">
-                                    <ul class="mb-0 pl-3" id="m1-log-list">
-                                        <li>Aug 5 10:42 — Assigned to James Lin</li>
-                                        <li>Aug 5 10:45 — Forwarded by James Lin</li>
-                                        <li>Aug 5 10:49 — Flagged for tone</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </article>
-
-        </div>
-    </div>
-    <!--/.inbox -->
-
-    <!--/.Popup Modals -->
-    <!-- Flag as Abuse (reasons) -->
-    <div class="modal fade" id="flagModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-
-                <div class="modal-header strip">
-                    <div class="bar bar-yellow">
-                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                            <span aria-hidden="true">&times;</span>
-                        </button>
-                    </div>
-                </div>
-
+            </div>
+            <form method="POST" id="flagForm">
+                <input type="hidden" name="action" value="flag">
+                <input type="hidden" name="affirmation_id" id="flagAid" value="">
+                <input type="hidden" name="reasons" id="flagReasons" value="">
                 <div class="modal-body">
                     <h5 class="mb-3 font-weight-bold">Flag as Abuse:</h5>
-
-                    <!-- BS4 toggle chips -->
                     <div id="reasonsGroup" class="btn-group btn-group-toggle d-flex flex-wrap w-100"
                         data-toggle="buttons">
-                        <label class="btn btn-outline m-1 flex-fill">
-                            <input type="checkbox" value="Inappropriate tone" autocomplete="off">
-                            Inappropriate tone
-                        </label>
-                        <label class="btn btn-outline m-1 flex-fill">
-                            <input type="checkbox" value="Personal attack" autocomplete="off"> Personal
-                            attack
-                        </label>
-                        <label class="btn btn-outline m-1 flex-fill">
-                            <input type="checkbox" value="Possible identity breach" autocomplete="off">
-                            Possible
-                            identity breach
-                        </label>
-                        <label class="btn btn-outline m-1 flex-fill">
-                            <input type="checkbox" value="Spam" autocomplete="off"> Spam
-                        </label>
-                        <label class="btn btn-outline m-1 flex-fill">
-                            <input type="checkbox" value="Discriminatory language" autocomplete="off">
-                            Discriminatory
-                            language
-                        </label>
-                        <label class="btn btn-outline m-1 flex-fill">
-                            <input type="checkbox" value="Sexual content" autocomplete="off"> Sexual content
-                        </label>
+                        <?php $flags = ['Inappropriate tone', 'Personal attack', 'Possible identity breach', 'Spam', 'Discriminatory language', 'Sexual content'];
+                        foreach ($flags as $f): ?>
+                            <label class="btn btn-outline m-1 flex-fill">
+                                <input type="checkbox" value="<?= htmlspecialchars($f) ?>" autocomplete="off">
+                                <?= htmlspecialchars($f) ?>
+                            </label>
+                        <?php endforeach; ?>
                     </div>
-
-                    <div id="flagHint" class="text-danger small d-none mt-2">
-                        Please select at least one reason.
-                    </div>
-
+                    <div id="flagHint" class="text-danger small d-none mt-2"> Please select at least one reason. </div>
                     <div class="d-flex justify-content-center gap-2 mt-4">
                         <button type="button" class="btn btn-warning mr-2" id="btnReset">Reset</button>
-                        <button type="button" class="btn btn-primary" id="btnSubmit">Submit</button>
+                        <button type="submit" class="btn btn-primary" id="btnSubmit">Submit</button>
                     </div>
                 </div>
-
-            </div>
+            </form>
         </div>
     </div>
-
-    <!-- Confirm HR -->
-    <div class="modal fade" id="confirmModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-
-                <div class="modal-header strip">
-                    <div class="bar bar-yellow">
-                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-                            <span aria-hidden="true">&times;</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="modal-body text-center">
-                    <h5 class="font-weight-bold mb-4">Are you sure you want to<br>report this message to HR?
-                    </h5>
-                    <div class="d-flex justify-content-center">
-                        <button class="btn btn-light border mr-2" id="btnNo">No</button>
-                        <button class="btn btn-primary" id="btnYes">Yes</button>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-    <!-- Reported (success) -->
-    <div class="modal fade" id="reportedModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-
-                <div class="modal-header strip">
-                    <div class="bar bar-green">
-                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                            <span aria-hidden="true" class="text-white">&times;</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="modal-body">
-                    <h5 class="text-center font-weight-bold m-0">The message has been reported to HR.</h5>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-    <!-- Forwarded -->
-    <div class="modal fade" id="forwardModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-
-                <div class="modal-header strip">
-                    <div class="bar bar-blue">
-                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                            <span aria-hidden="true" class="text-white">&times;</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="modal-body">
-                    <h5 class="text-center font-weight-bold m-0">
-                        The message has been sent to the recipient’s inbox.
-                    </h5>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-    <!-- Return / Send Back (reason) -->
-    <div class="modal fade" id="returnModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-
-                <div class="modal-header strip">
-                    <div class="bar bar-yellow w-100 d-flex justify-content-end">
-                        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-                            <span aria-hidden="true" class="text-white">&times;</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="modal-body">
-                    <h5 class="mb-3 font-weight-bold">
-                        Reason for returned email :
-                        <small id="wordCounter" class="text-muted ml-1">( 0/100 )</small>
-                    </h5>
-
-                    <textarea id="returnReason" class="form-control" rows="6" placeholder="Type the reason here…"
-                        aria-describedby="wordCounter"></textarea>
-
-                    <div id="returnHint" class="text-danger small d-none mt-2">
-                        Please write between 1 and 100 words.
-                    </div>
-
-                    <div class="d-flex justify-content-center mt-4">
-                        <button type="button" class="btn btn-warning mr-3" id="returnReset">Reset</button>
-                        <button type="button" class="btn btn-primary" id="returnSubmit" disabled>Submit</button>
-                    </div>
-                </div>
-
-            </div>
-        </div>
-    </div>
-
-
 </div>
 
-<?php include 'footer.php'; ?>
+<!-- Send Back Modal -->
+<div class="modal fade" id="sendBackModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header strip">
+                <div class="bar bar-red w-100 d-flex justify-content-between align-items-center px-2">
+                    <h5 class="mb-0">Reason for Returned Email</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+            </div>
+            <form method="POST" id="sendBackForm">
+                <input type="hidden" name="action" value="send_back">
+                <input type="hidden" name="affirmation_id" id="sendBackAid" value="">
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="sendBackReason">Enter reason (max 100 words):</label>
+                        <textarea class="form-control" id="sendBackReason" name="reason" rows="4" maxlength="800"
+                            placeholder="Type your reason here..."></textarea>
+                        <div id="sendBackHint" class="text-danger small d-none mt-2"> Please enter a reason (max 100
+                            words). </div>
+                    </div>
+                    <div class="d-flex justify-content-center gap-2 mt-4">
+                        <button type="button" class="btn btn-warning mr-2" id="btnSendBackReset">Reset</button>
+                        <button type="submit" class="btn btn-primary" id="btnSendBackSubmit">Submit</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
 <script>
-(function() {
-    var inbox = document.querySelector('.inbox');
-    if(!inbox) return;
-    inbox.addEventListener('click', function(e) {
-        var clickTarget = e.target.closest('.arrow-btn, .msg__head');
-        if(!clickTarget) return;
-        var msg = clickTarget.closest('.msg');
-        if(!msg) return;
-        var details = msg.querySelector('.msg__details');
-        var open = msg.getAttribute('aria-expanded')==='true';
-        msg.setAttribute('aria-expanded', open ? 'false' : 'true');
-        if(details) details.style.display = open ? 'none' : 'block';
+    document.addEventListener("DOMContentLoaded", function () {
+        // --- FLAG MODAL --- 
+        let flagForm = document.getElementById("flagForm");
+        let flagAidInput = document.getElementById("flagAid");
+        let flagReasonsInput = document.getElementById("flagReasons");
+        let flagHint = document.getElementById("flagHint");
 
-        // mark read
-        if(!open && msg.dataset.status==='unread') {
-            var mid = msg.dataset.mid;
-            fetch('hr-dash.php', {
-                method:'POST',
-                headers:{'Content-Type':'application/x-www-form-urlencoded'},
-                body:'action=mark_read&message_id='+encodeURIComponent(mid)
-            }).then(()=>{ msg.dataset.status='read';
-                var pill = msg.querySelector('.status-pill')||msg.querySelector('.status');
-                if(pill){ pill.classList.remove('status--unread'); pill.classList.add('status--read'); pill.querySelector('span:last-child').textContent='Read'; }
+        document.querySelectorAll(".action-flag").forEach(btn => {
+            btn.addEventListener("click", function () {
+                let aid = this.getAttribute("data-aid");
+                flagAidInput.value = aid;
+                flagReasonsInput.value = "";
+                flagHint.classList.add("d-none");
+                document.querySelectorAll("#reasonsGroup input[type=checkbox]").forEach(cb => cb
+                    .checked = false);
             });
+        });
+
+        document.getElementById("btnReset").addEventListener("click", function () {
+            document.querySelectorAll("#reasonsGroup input[type=checkbox]").forEach(cb => cb.checked =
+                false);
+            flagReasonsInput.value = "";
+            flagHint.classList.add("d-none");
+        });
+
+        flagForm.addEventListener("submit", function (e) {
+            let selected = [];
+            document.querySelectorAll("#reasonsGroup input[type=checkbox]:checked").forEach(cb => {
+                selected.push(cb.value);
+            });
+            if (selected.length === 0) {
+                e.preventDefault();
+                flagHint.classList.remove("d-none");
+                return false;
+            }
+            flagReasonsInput.value = selected.join(", ");
+        });
+
+        // --- SEND BACK MODAL --- 
+        let sendBackForm = document.getElementById("sendBackForm");
+        let sendBackAidInput = document.getElementById("sendBackAid");
+        let sendBackReasonInput = document.getElementById("sendBackReason");
+        let sendBackHint = document.getElementById("sendBackHint");
+
+        document.querySelectorAll(".action-sendback").forEach(btn => {
+            btn.addEventListener("click", function () {
+                let aid = this.getAttribute("data-aid");
+                sendBackAidInput.value = aid;
+                sendBackReasonInput.value = "";
+                sendBackHint.classList.add("d-none");
+            });
+        });
+
+        document.getElementById("btnSendBackReset").addEventListener("click", function () {
+            sendBackReasonInput.value = "";
+            sendBackHint.classList.add("d-none");
+        });
+
+        sendBackForm.addEventListener("submit", function (e) {
+            let text = sendBackReasonInput.value.trim();
+            let wordCount = text.split(/\s+/).filter(w => w.length > 0).length;
+            if (wordCount === 0 || wordCount > 100) {
+                e.preventDefault();
+                sendBackHint.textContent = "Please enter a reason (1–100 words).";
+                sendBackHint.classList.remove("d-none");
+                return false;
+            }
+        });
+
+        // --- AUTO-CLOSE SEND BACK ALERT AFTER 5 SEC --- 
+        let successAlert = document.getElementById("sendBackSuccessAlert");
+        if (successAlert) {
+            setTimeout(() => {
+                successAlert.classList.remove("show");
+                successAlert.classList.add("fade");
+            }, 5000);
         }
     });
-
-    // success modals
-    var params = new URLSearchParams(location.search);
-    if(params.get('ok')==='flagged') $('#reportedModal').modal('show');
-    if(params.has('ok')||params.has('err')) window.history.replaceState({}, '', 'hr-dash.php');
-})();
 </script>
+
+<?php include 'footer.php'; ?>

@@ -2,23 +2,33 @@
 session_start();
 include 'db_connection.php';
 
-// Example: logged-in user (replace with your session logic)
-$logged_in_user_id = 4; // change according to login session
+// --- Guard: logged-in user
+if (empty($_SESSION['user_id'])) {
+    header('Location: login.php');
+    exit;
+}
+$logged_in_user_id = (int) $_SESSION['user_id'];
 
-// Fetch current active cycle
+// --- Fetch current active cycle
 $stmt = $pdo->query("SELECT * FROM affirmation_cycle WHERE is_active=1 LIMIT 1");
 $currentCycle = $stmt->fetch();
 $cycle_id = $currentCycle['cycle_id'] ?? null;
 
-// Handle new affirmation submission
+// --- Handle new affirmation submission
+$success = false;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $recipient_id = $_POST['recipient_id'];
+    $recipient_id = (isset($_POST['recipient_id']) && $_POST['recipient_id'] !== '')
+        ? (int) $_POST['recipient_id']
+        : 15;
     $subject = $_POST['subject'];
     $message = $_POST['message'];
 
-    $sql = "INSERT INTO affirmations (sender_id, recipient_id, cycle_id, subject, message)
-            VALUES (:sender_id, :recipient_id, :cycle_id, :subject, :message)";
-    $stmt = $pdo->prepare($sql);
+    // Insert affirmation into DB
+    $stmt = $pdo->prepare("
+        INSERT INTO affirmations 
+        (sender_id, recipient_id, cycle_id, subject, message) 
+        VALUES (:sender_id, :recipient_id, :cycle_id, :subject, :message)
+    ");
     $stmt->execute([
         'sender_id' => $logged_in_user_id,
         'recipient_id' => $recipient_id,
@@ -27,11 +37,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'message' => $message
     ]);
 
-    header("Location: dashboard.php?success=1");
-    exit;
+    // Set success flag for message
+    $success = true;
 }
 
-// Fetch affirmation history
+// --- Fetch affirmation history (only sent by this user)
 $affirmations = [];
 if ($cycle_id) {
     $sql = "SELECT a.*, u1.email AS sender_email, u2.email AS recipient_email
@@ -39,18 +49,43 @@ if ($cycle_id) {
             JOIN users u1 ON a.sender_id = u1.id
             JOIN users u2 ON a.recipient_id = u2.id
             WHERE a.cycle_id = :cycle_id
+              AND a.sender_id = :sender_id
             ORDER BY a.submitted_at DESC";
     $stmt = $pdo->prepare($sql);
-    $stmt->execute(['cycle_id' => $cycle_id]);
+    $stmt->execute([
+        'cycle_id' => $cycle_id,
+        'sender_id' => $logged_in_user_id
+    ]);
     $affirmations = $stmt->fetchAll();
 }
 
-// Fetch staff list for recipient dropdown
-$staffStmt = $pdo->prepare("SELECT * FROM users WHERE role='user' AND id != :user_id");
-$staffStmt->execute(['user_id' => $logged_in_user_id]);
-$staffList = $staffStmt->fetchAll();
+// --- Fetch HR users
+$hrStmt = $pdo->prepare("SELECT * FROM users WHERE role='hr'");
+$hrStmt->execute();
+$hrList = $hrStmt->fetchAll();
 
+// --- Fetch all managers except self
+$allManagersStmt = $pdo->prepare("SELECT * FROM users WHERE role='manager' AND id != :user_id");
+$allManagersStmt->execute(['user_id' => $logged_in_user_id]);
+$allManagers = $allManagersStmt->fetchAll();
+
+// --- Fetch assigned managers (optional display in dropdown)
+$assignedManagerStmt = $pdo->prepare("
+    SELECT u.* 
+    FROM users u
+    JOIN manager_staff ms ON u.id = ms.manager_id
+    WHERE ms.staff_id = :staff_id
+");
+$assignedManagerStmt->execute(['staff_id' => $logged_in_user_id]);
+$assignedManagers = $assignedManagerStmt->fetchAll();
+
+// --- Separate unassigned managers for dropdown
+$assignedIds = array_column($assignedManagers, 'id');
+$otherManagers = array_filter($allManagers, function ($mgr) use ($assignedIds) {
+    return !in_array($mgr['id'], $assignedIds);
+});
 ?>
+
 <?php include 'header.php'; ?>
 
 <div class="container py-5">
@@ -61,8 +96,13 @@ $staffList = $staffStmt->fetchAll();
                 <!-- Button to trigger modal -->
                 <button class="btn btn-primary mb-3" data-toggle="modal" data-target="#affirmationModal">New
                     Affirmation</button>
-                <h5>Affirmation History</h5>
 
+                <!-- Success message -->
+                <?php if ($success): ?>
+                    <div class="alert alert-success">Affirmation sent successfully!</div>
+                <?php endif; ?>
+
+                <h5>Affirmation History</h5>
                 <?php if (!empty($affirmations)): ?>
                     <?php foreach ($affirmations as $row): ?>
                         <div class="affirmation mb-3 p-2 border">
@@ -75,7 +115,6 @@ $staffList = $staffStmt->fetchAll();
                 <?php else: ?>
                     <p>No affirmations sent yet.</p>
                 <?php endif; ?>
-
             </div>
 
             <!-- Modal Form -->
@@ -89,12 +128,23 @@ $staffList = $staffStmt->fetchAll();
                             </div>
                             <div class="modal-body">
                                 <div class="form-group">
+                                    <label>Department</label>
+                                    <select id="departmentSelect" class="form-control" required>
+                                        <option value="">Select Department</option>
+                                        <?php
+                                        $deptStmt = $pdo->query("SELECT DISTINCT department FROM manager_staff ORDER BY department ASC");
+                                        while ($dept = $deptStmt->fetch(PDO::FETCH_ASSOC)) {
+                                            echo '<option value="' . htmlspecialchars($dept['department']) . '">' . $dept['department'] . '</option>';
+                                        }
+                                        ?>
+                                        <option value="unknown">Not sure / Unknown department</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-group">
                                     <label>Recipient</label>
-                                    <select name="recipient_id" class="form-control" required>
-                                        <?php foreach ($staffList as $staff): ?>
-                                            <option value="<?= $staff['id'] ?>"><?= htmlspecialchars($staff['email']) ?>
-                                            </option>
-                                        <?php endforeach; ?>
+                                    <select name="recipient_id" id="recipientSelect" class="form-control" required>
+                                        <option value="">Select Recipient</option>
                                     </select>
                                 </div>
                                 <div class="form-group">
@@ -109,14 +159,13 @@ $staffList = $staffStmt->fetchAll();
                                 </div>
                             </div>
                             <div class="modal-footer">
-                                <button class="btn btn-primary" type="submit">Send</button>
-                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-primary" data-dismiss="modal">Cancel</button>
+                                <button class="btn btn-secondary" type="submit">Send</button>
                             </div>
                         </form>
                     </div>
                 </div>
             </div>
-
         </div>
 
         <!-- Right Column: Current Cycle -->
@@ -148,5 +197,45 @@ $staffList = $staffStmt->fetchAll();
         </div>
     </div>
 </div>
+
+<script>
+    document.getElementById('departmentSelect').addEventListener('change', function () {
+        const dept = this.value;
+        const recipientSelect = document.getElementById('recipientSelect');
+        recipientSelect.innerHTML = '<option>Loading...</option>';
+
+        if (dept === 'unknown') {
+            recipientSelect.innerHTML = '<option value="">Recipient not specified</option>';
+            recipientSelect.disabled = true;
+            return; // 不再加载staff列表
+        } else {
+            recipientSelect.disabled = false;
+        }
+
+        if (dept) {
+            fetch('get_staff_by_department.php?department=' + encodeURIComponent(dept))
+                .then(response => response.json())
+                .then(data => {
+                    recipientSelect.innerHTML = '<option value="">Select Recipient</option>';
+                    if (data.length > 0) {
+                        data.forEach(user => {
+                            const option = document.createElement('option');
+                            option.value = user.id;
+                            option.textContent = user.email;
+                            recipientSelect.appendChild(option);
+                        });
+                    } else {
+                        recipientSelect.innerHTML = '<option value="">No recipients found</option>';
+                    }
+                })
+                .catch(() => {
+                    recipientSelect.innerHTML = '<option value="">Error loading</option>';
+                });
+        } else {
+            recipientSelect.innerHTML = '<option value="">Select Recipient</option>';
+        }
+    });
+</script>
+
 
 <?php include 'footer.php'; ?>
