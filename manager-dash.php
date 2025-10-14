@@ -54,14 +54,15 @@ function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
     $sql = "
         SELECT 1
         FROM affirmations a
-        JOIN manager_staff ms_r
-          ON ms_r.staff_id = a.recipient_id
-         AND ms_r.manager_id = :mid_rec
-        LEFT JOIN manager_staff ms_s
-          ON ms_s.staff_id = a.sender_id
-         AND ms_s.manager_id = :mid_send
+        LEFT JOIN manager_staff ms_rec
+               ON ms_rec.staff_id = a.recipient_id
+              AND ms_rec.manager_id = :mid_rec
+        LEFT JOIN manager_staff ms_send
+               ON ms_send.staff_id = a.sender_id
+              AND ms_send.manager_id = :mid_send
         WHERE a.affirmation_id = :aid
-          AND ms_s.staff_id IS NULL
+          AND (ms_rec.staff_id IS NOT NULL OR a.recipient_id = :mid_self1)
+          AND (a.recipient_id = :mid_self2 OR ms_send.staff_id IS NULL)
         LIMIT 1
     ";
     $st = $pdo->prepare($sql);
@@ -69,12 +70,16 @@ function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
         'aid' => $aid,
         'mid_rec' => $managerId,
         'mid_send' => $managerId,
+        'mid_self1' => $managerId,
+        'mid_self2' => $managerId,
     ]);
     if (!$st->fetchColumn()) {
         http_response_code(403);
         exit('Forbidden');
     }
 }
+
+
 /**
  * Insert a row into audit_logs for the given affirmation/action.
  * - actor_user_id = manager performing the action
@@ -184,20 +189,24 @@ $st = $pdo->prepare("
   SELECT a.*, ur.email AS recipient_email
   FROM affirmations a
   JOIN users ur ON ur.id = a.recipient_id
-  JOIN manager_staff ms_r
-    ON ms_r.staff_id = a.recipient_id
-   AND ms_r.manager_id = :mid_rec
-  LEFT JOIN manager_staff ms_s
-    ON ms_s.staff_id = a.sender_id
-   AND ms_s.manager_id = :mid_send
-  WHERE ms_s.staff_id IS NULL
+  LEFT JOIN manager_staff ms_rec
+         ON ms_rec.staff_id = a.recipient_id
+        AND ms_rec.manager_id = :mid_r
+  LEFT JOIN manager_staff ms_send
+         ON ms_send.staff_id = a.sender_id
+        AND ms_send.manager_id = :mid_s
+  WHERE (ms_rec.staff_id IS NOT NULL OR a.recipient_id = :mid_self1)
+    AND (a.recipient_id = :mid_self2 OR ms_send.staff_id IS NULL)
   ORDER BY a.submitted_at DESC
 ");
 $st->execute([
-    'mid_rec' => $managerId,
-    'mid_send' => $managerId,
+    'mid_r' => $managerId,
+    'mid_s' => $managerId,
+    'mid_self1' => $managerId,
+    'mid_self2' => $managerId,
 ]);
 $teamAffirmations = $st->fetchAll(PDO::FETCH_ASSOC);
+
 
 include 'header.php';
 ?>

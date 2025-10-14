@@ -2,7 +2,6 @@
 declare(strict_types=1);
 session_start();
 require 'db_connection.php';
-require_once 'mailer.php';  // ✅ Added to send emails
 
 // --- Guard: only HR can access 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'hr') {
@@ -11,24 +10,21 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'hr') {
 }
 $hrId = (int) $_SESSION['user_id'];
 
-// --- Ensure affirmations table has status/flag_reason/return_reason columns 
+// --- Ensure affirmations table has necessary columns
 try {
     $hasStatus = $pdo->query("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='affirmations' AND COLUMN_NAME='status'")->fetchColumn();
     $hasReason = $pdo->query("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='affirmations' AND COLUMN_NAME='flag_reason'")->fetchColumn();
     $hasReturn = $pdo->query("SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME='affirmations' AND COLUMN_NAME='return_reason'")->fetchColumn();
 
-    if (!$hasStatus) {
-        $pdo->exec("ALTER TABLE affirmations ADD COLUMN status ENUM('unread','read','forwarded','flagged','sent_back') NOT NULL DEFAULT 'unread' AFTER message");
-    }
-    if (!$hasReason) {
-        $pdo->exec("ALTER TABLE affirmations ADD COLUMN flag_reason TEXT NULL AFTER status");
-    }
-    if (!$hasReturn) {
-        $pdo->exec("ALTER TABLE affirmations ADD COLUMN return_reason TEXT NULL AFTER flag_reason");
-    }
+    if (!$hasStatus) $pdo->exec("ALTER TABLE affirmations ADD COLUMN status ENUM('unread','read','forwarded','flagged','sent_back') NOT NULL DEFAULT 'unread' AFTER message");
+    if (!$hasReason) $pdo->exec("ALTER TABLE affirmations ADD COLUMN flag_reason TEXT NULL AFTER status");
+    if (!$hasReturn) $pdo->exec("ALTER TABLE affirmations ADD COLUMN return_reason TEXT NULL AFTER flag_reason");
 } catch (Throwable $e) {
     // ignore
 }
+
+// --- Fetch all departments for forwarding
+$departments = $pdo->query("SELECT DISTINCT department FROM manager_staff ORDER BY department ASC")->fetchAll(PDO::FETCH_COLUMN);
 
 // --- Handle actions: mark_read / forward / flag / send_back 
 $action = $_POST['action'] ?? '';
@@ -39,7 +35,6 @@ if ($action) {
         exit('Bad Request');
     }
 
-    // ✅ Fetch affirmation without strict recipient check
     $stmt = $pdo->prepare("SELECT * FROM affirmations WHERE affirmation_id=:aid");
     $stmt->execute(['aid' => $aid]);
     $msg = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -51,6 +46,7 @@ if ($action) {
 
     $currentStatus = strtolower($msg['status'] ?? 'unread');
 
+    // --- MARK READ
     if ($action === 'mark_read') {
         if ($currentStatus === 'unread') {
             $pdo->prepare("UPDATE affirmations SET status='read' WHERE affirmation_id=:aid")->execute(['aid' => $aid]);
@@ -58,61 +54,38 @@ if ($action) {
         exit('OK');
     }
 
+    // --- FORWARD TO DEPARTMENT MANAGER
     if ($action === 'forward') {
         if (in_array($currentStatus, ['forwarded', 'flagged', 'sent_back'])) {
             header('Location: hr-dash.php?err=locked');
             exit;
         }
 
-        $recipientId = (int) ($_POST['recipient_id'] ?? 0);
-        if ($recipientId <= 0) {
-            header('Location: hr-dash.php?err=no_recipient');
+        $department = trim((string) ($_POST['department'] ?? ''));
+        if (!$department) {
+            header('Location: hr-dash.php?err=no_department');
             exit;
         }
 
-        // ✅ Update DB to show it's forwarded
+        // Get manager of this department
+        $stmtMgr = $pdo->prepare("SELECT id FROM users WHERE id = (SELECT manager_id FROM manager_staff WHERE department=:dept LIMIT 1) LIMIT 1");
+        $stmtMgr->execute(['dept' => $department]);
+        $managerId = (int) $stmtMgr->fetchColumn();
+
+        if ($managerId <= 0) {
+            header('Location: hr-dash.php?err=no_manager');
+            exit;
+        }
+
+        // Update affirmation recipient to manager and mark as forwarded
         $pdo->prepare("UPDATE affirmations SET recipient_id=:rid, status='forwarded' WHERE affirmation_id=:aid")
-            ->execute(['rid' => $recipientId, 'aid' => $aid]);
+            ->execute(['rid' => $managerId, 'aid' => $aid]);
 
-        // ✅ Fetch recipient email
-        $stmtUser = $pdo->prepare("SELECT email FROM users WHERE id=:id LIMIT 1");
-        $stmtUser->execute(['id' => $recipientId]);
-        $recipientEmail = $stmtUser->fetchColumn();
-
-        // ✅ Send email notification if recipient email exists
-        if ($recipientEmail && filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
-            $subject = "Forwarded Affirmation: " . htmlspecialchars($msg['subject'] ?? 'No Subject');
-            $body = "
-                <p>Hello,</p>
-                <p>An affirmation has been forwarded to you by the HR team.</p>
-                <p><strong>Subject:</strong> " . htmlspecialchars($msg['subject'] ?? 'No Subject') . "</p>
-                <p><strong>Message:</strong></p>
-                <blockquote>" . nl2br(htmlspecialchars($msg['message'] ?? '')) . "</blockquote>
-                <p>Please log in to your dashboard to view and respond.</p>
-                <p>– HR Team</p>
-            ";
-            send_mail($recipientEmail, $subject, $body);
-        }
-
-        // ✅ Log mail in mail_logs
-        try {
-            $stmtLog = $pdo->prepare("
-                INSERT INTO mail_logs (affirmation_id, email, status, message, created_at)
-                VALUES (:aid, :email, 'sent', :msg, NOW())
-            ");
-            $stmtLog->execute([
-                'aid' => $aid,
-                'email' => $recipientEmail,
-                'msg' => 'Sent back notification email to sender'
-            ]);
-        } catch (Throwable $e) {
-            error_log('MAIL LOG ERROR: ' . $e->getMessage());
-        }
-
-        header('Location: hr-dash.php?ok=forwarded_email');
+        header('Location: hr-dash.php?ok=forwarded');
         exit;
     }
 
+    // --- SEND BACK
     if ($action === 'send_back') {
         if (in_array($currentStatus, ['flagged', 'forwarded', 'sent_back'])) {
             header('Location: hr-dash.php?err=locked');
@@ -122,63 +95,14 @@ if ($action) {
         $reason = trim((string) ($_POST['reason'] ?? null)) ?: null;
         $senderId = (int) $msg['sender_id'];
 
-        // ✅ Always fetch sender’s email directly from DB
-        $stmtUser = $pdo->prepare("SELECT email FROM users WHERE id = :id LIMIT 1");
-        $stmtUser->execute(['id' => $senderId]);
-        $senderEmail = $stmtUser->fetchColumn();
-
-        // ✅ Double-check that the fetched email matches the sender
-        if (!$senderEmail || !filter_var($senderEmail, FILTER_VALIDATE_EMAIL)) {
-            error_log("❌ Invalid sender email for affirmation #{$aid}");
-            header('Location: hr-dash.php?err=no_sender_email');
-            exit;
-        }
-
-        // ✅ Update affirmation record
-        $pdo->prepare("
-            UPDATE affirmations 
-            SET status='sent_back', return_reason=:r 
-            WHERE affirmation_id=:aid
-        ")->execute([
-                    'r' => $reason,
-                    'aid' => $aid
-                ]);
-
-        // ✅ Send email directly to the original sender only
-        $subject = "Affirmation Sent Back by HR: " . htmlspecialchars($msg['subject'] ?? 'No Subject');
-        $body = "
-            <p>Hello,</p>
-            <p>Your affirmation has been sent back by the HR team for review.</p>
-            <p><strong>Reason provided:</strong></p>
-            <blockquote>" . nl2br(htmlspecialchars($reason ?? 'No reason provided')) . "</blockquote>
-            <p><strong>Your original message:</strong></p>
-            <blockquote>" . nl2br(htmlspecialchars($msg['message'] ?? '')) . "</blockquote>
-            <p>Please log in to your dashboard to make corrections or resubmit.</p>
-            <p>– HR Team</p>
-        ";
-        send_mail($senderEmail, $subject, $body);
-
-        // ✅ Log mail in mail_logs
-        try {
-            $stmtLog = $pdo->prepare("
-                INSERT INTO mail_logs (affirmation_id, email, status, message, created_at)
-                VALUES (:aid, :email, 'sent', :msg, NOW())
-            ");
-            $stmtLog->execute([
-                'aid' => $aid,
-                'email' => $senderEmail,
-                'msg' => 'Sent back notification email to sender'
-            ]);
-        } catch (Throwable $e) {
-            error_log('MAIL LOG ERROR: ' . $e->getMessage());
-        }
+        $pdo->prepare("UPDATE affirmations SET status='sent_back', return_reason=:r WHERE affirmation_id=:aid")
+            ->execute(['r' => $reason, 'aid' => $aid]);
 
         header('Location: hr-dash.php?ok=sent_back');
         exit;
     }
 
-
-
+    // --- FLAG
     if ($action === 'flag') {
         if (in_array($currentStatus, ['flagged', 'forwarded', 'sent_back'])) {
             header('Location: hr-dash.php?err=locked');
@@ -207,41 +131,23 @@ $messages = $pdo->prepare("
 $messages->execute(['hrId' => $hrId]);
 $messages = $messages->fetchAll(PDO::FETCH_ASSOC);
 
-// --- Fetch all recipients (except HR) for forwarding 
-$recipients = $pdo->query("SELECT id,email FROM users WHERE role!='hr' ORDER BY email")->fetchAll(PDO::FETCH_ASSOC);
-
 include 'header.php';
 ?>
 
-<!-- ✅ Success alert for Send Back -->
-<?php if (!empty($_GET['ok']) && $_GET['ok'] === 'sent_back'): ?>
-    <div class="container mt-3">
-        <div class="alert alert-success alert-dismissible fade show" role="alert" id="sendBackSuccessAlert">
-            <strong>Success!</strong> Message sent back successfully
+<div class="container mt-3">
+    <?php if (!empty($_GET['ok']) && $_GET['ok'] === 'forwarded'): ?>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <strong>Success!</strong> Affirmation forwarded to department manager.
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
-    </div>
-<?php endif; ?>
-
-<!-- ✅ Success alert for Forwarded Email -->
-<?php if (!empty($_GET['ok']) && $_GET['ok'] === 'forwarded_email'): ?>
-    <div class="container mt-3">
-        <div class="alert alert-success alert-dismissible fade show" role="alert" id="forwardSuccessAlert">
-            <strong>Success!</strong> Message forwarded and email sent successfully
+    <?php endif; ?>
+    <?php if (!empty($_GET['ok']) && $_GET['ok'] === 'sent_back'): ?>
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <strong>Success!</strong> Affirmation sent back to sender.
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
-    </div>
-<?php endif; ?>
-
-<!-- ✅ Success alert for Send Back -->
-<?php if (!empty($_GET['ok']) && $_GET['ok'] === 'sent_back'): ?>
-    <div class="container mt-3">
-        <div class="alert alert-success alert-dismissible fade show" role="alert" id="sendBackSuccessAlert">
-            <strong>Success!</strong> Message sent back successfully
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    </div>
-<?php endif; ?>
+    <?php endif; ?>
+</div>
 
 <div class="body">
     <div class="inbox mt-3 mt-lg-5">
@@ -250,20 +156,16 @@ include 'header.php';
                 $aid = (int) $msg['affirmation_id'];
                 $status = strtolower($msg['status'] ?? 'unread');
                 $statusClass = 'status--' . $status;
-                ?>
-                <article class="msg" data-aid="<?= $aid ?>" data-status="<?= htmlspecialchars($status) ?>"
-                    aria-expanded="false">
+            ?>
+                <article class="msg" data-aid="<?= $aid ?>" data-status="<?= htmlspecialchars($status) ?>" aria-expanded="false">
                     <div class="msg__head" role="button" aria-controls="msg-<?= $aid ?>-details">
-                        <!-- ✅ Avatar shows sender's initial only -->
                         <div class="avatar"><?= strtoupper(substr($msg['sender_email'], 0, 1)) ?></div>
                         <div class="text">
                             <div class="to-line">
-                                <!-- ✅ Only show recipient (manager) email -->
                                 <span class="to"><?= htmlspecialchars($msg['recipient_email']) ?></span>
                             </div>
                             <div class="subject"><?= htmlspecialchars($msg['subject'] ?? 'No Subject') ?></div>
-                            <div class="snippet"><?= htmlspecialchars(mb_strimwidth($msg['message'] ?? '', 0, 160, '…')) ?>
-                            </div>
+                            <div class="snippet"><?= htmlspecialchars(mb_strimwidth($msg['message'] ?? '', 0, 160, '…')) ?></div>
                         </div>
                         <div class="state">
                             <div class="status status-pill <?= $statusClass ?>">
@@ -274,31 +176,23 @@ include 'header.php';
                             <button class="arrow-btn" type="button"><i class="fa-solid fa-chevron-down"></i></button>
                         </div>
                     </div>
+
                     <div class="msg__details" id="msg-<?= $aid ?>-details">
                         <p class="details-text"><?= nl2br(htmlspecialchars($msg['message'])) ?></p>
-                        <?php if ($status === 'flagged' && !empty($msg['flag_reason'])): ?>
-                            <div class="alert alert-warning py-2 px-3 mb-3">
-                                <strong>Flag reasons:</strong> <?= htmlspecialchars($msg['flag_reason']) ?>
-                            </div>
-                        <?php endif; ?>
-                        <?php if ($status === 'sent_back' && !empty($msg['return_reason'])): ?>
-                            <div class="alert alert-secondary py-2 px-3 mb-3">
-                                <strong>Return reason:</strong> <?= htmlspecialchars($msg['return_reason']) ?>
-                            </div>
-                        <?php endif; ?>
                         <div class="actions">
-                            <!-- Forward form -->
+                            <!-- Forward to department -->
                             <form method="POST" class="d-inline">
                                 <input type="hidden" name="action" value="forward">
                                 <input type="hidden" name="affirmation_id" value="<?= $aid ?>">
-                                <select name="recipient_id" class="form-control mb-3" required>
-                                    <option value="">Select recipient</option>
-                                    <?php foreach ($recipients as $r): ?>
-                                        <option value="<?= $r['id'] ?>"><?= htmlspecialchars($r['email']) ?></option>
+                                <select name="department" class="form-control mb-3" required>
+                                    <option value="">Select Department</option>
+                                    <?php foreach ($departments as $dept): ?>
+                                        <option value="<?= htmlspecialchars($dept) ?>"><?= htmlspecialchars($dept) ?></option>
                                     <?php endforeach; ?>
                                 </select>
                                 <button type="submit" class="btn btn-secondary btn-forward">Forward</button>
                             </form>
+
                             <!-- Send Back -->
                             <button type="button" class="btn btn-danger action-sendback" data-toggle="modal"
                                 data-target="#sendBackModal" data-aid="<?= $aid ?>"> Send Back </button>
@@ -312,6 +206,7 @@ include 'header.php';
         </div>
     </div>
 </div>
+
 
 <!-- Flag Modal -->
 <div class="modal fade" id="flagModal" tabindex="-1" aria-hidden="true">

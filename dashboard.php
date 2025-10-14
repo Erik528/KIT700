@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmtChk->execute(['rid' => $recipient_id]);
         $role = $stmtChk->fetchColumn();
 
-        $allowed = ['manager', 'hr'];
+        $allowed = ['user', 'manager', 'hr'];
         if (!$role || !in_array($role, $allowed, true)) {
             $recipient_id = 15;
         }
