@@ -1149,24 +1149,21 @@ select.filter-input {
     display: block;
 }
 
-/* Mobile: filters collapsed by default; results visible */
-/* @media (max-width: 767.98px) {
-    #audit .filters-content {
-        display: none;
-    }
+footer {
+    text-align: center;
+    padding: 1rem 0;
+    color: #fff;
+    background: #004688;
+}
 
-    #audit .filters-content.show {
-        display: block;
-    }
-} */
+footer p {
+    margin: 0;
+}
 
-/* Desktop: filters always visible; toggle button hidden */
-/* @media (min-width: 768px) {
-    #audit .filters-content {
-        display: block !important;
-    }
 
-    #audit .filters-toggle {
-        display: none;
+@media(max-width:575px) {
+    #btnAuditExport {
+        margin-top: 1rem;
+        width: 100%;
     }
-} */
+}

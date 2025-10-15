@@ -181,7 +181,6 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
                 if ($prevWasActive && $prevOpenToday && !$newOpenToday) {
                     announce_cycle($pdo, 'close', $startDate, $endDate);
                 }
-
             } catch (Throwable $e) {
                 if ($pdo->inTransaction())
                     $pdo->rollBack();
@@ -519,10 +518,10 @@ if ($curStart && $curEnd) {
                                 </div>
                             </div>
 
-                            <div class="d-flex">
+                            <div class="d-md-flex flex-wrap">
                                 <button id="btnReset" class="btn btn-secondary mr-2">RESET</button>
                                 <button id="btnSave" class="btn btn-warning">SAVE CYCLE</button>
-                                <div class="ml-auto d-flex align-items-center">
+                                <div class="mt-3 mt-md-0 ml-md-auto d-flex align-items-center">
                                     <span>Current Cycle:&nbsp;</span>
                                     <span id="badgeOpen" class="badge badge-success mr-2 d-none">OPEN</span>
                                     <span id="badgeClosed" class="badge badge-secondary mr-2 d-none">CLOSED</span>
@@ -604,7 +603,7 @@ if ($curStart && $curEnd) {
                                 </div>
                             </div>
 
-                            <div class="d-flex">
+                            <div class="d-block d-sm-flex">
                                 <button id="btnAuditReset" class="btn btn-secondary mr-2">Reset</button>
                                 <button id="btnAuditSearch" class="btn btn-primary">Search</button>
                                 <button id="btnAuditExport" class="btn btn-outline-info ml-auto">Export CSV</button>
@@ -666,7 +665,7 @@ $payload = [
 ?>
 <!-- === Page Scripts: wire both Cycle and Audit tabs ======================= -->
 <script>
-    (function () {
+    (function() {
         const init = <?php echo json_encode($payload, JSON_UNESCAPED_UNICODE); ?>;
         const $ = (s) => document.querySelector(s);
 
@@ -696,9 +695,15 @@ $payload = [
             const fd = new FormData();
             fd.append('action', 'force_close_cycle');
             try {
-                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const res = await fetch(location.href, {
+                    method: 'POST',
+                    body: fd
+                });
                 const j = await res.json();
-                if (!j.ok) { alert(j.msg || 'Force close failed'); return; }
+                if (!j.ok) {
+                    alert(j.msg || 'Force close failed');
+                    return;
+                }
                 location.reload();
             } catch (err) {
                 alert(err.message || 'Network error');
@@ -729,11 +734,17 @@ $payload = [
                 historyTbody.appendChild(tr);
             });
         }
+
         function setFlash(ok, msg) {
             flashOk.classList.add('d-none');
             flashErr.classList.add('d-none');
-            if (ok) { flashOk.textContent = msg || 'Saved'; flashOk.classList.remove('d-none'); }
-            else if (msg) { flashErr.textContent = msg; flashErr.classList.remove('d-none'); }
+            if (ok) {
+                flashOk.textContent = msg || 'Saved';
+                flashOk.classList.remove('d-none');
+            } else if (msg) {
+                flashErr.textContent = msg;
+                flashErr.classList.remove('d-none');
+            }
         }
 
         if (init.start) startDate.value = init.start;
@@ -756,23 +767,41 @@ $payload = [
             fd.append('start_date', startDate.value || '');
             fd.append('weeks', repeatWeeks.value || '0');
             try {
-                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const res = await fetch(location.href, {
+                    method: 'POST',
+                    body: fd
+                });
                 const j = await res.json();
-                if (!j.ok) { setFlash(false, j.msg || 'Save failed'); return; }
+                if (!j.ok) {
+                    setFlash(false, j.msg || 'Save failed');
+                    return;
+                }
                 location.reload();
-            } catch (err) { setFlash(false, err.message || 'Network error'); }
+            } catch (err) {
+                setFlash(false, err.message || 'Network error');
+            }
         });
 
         btnClear.addEventListener('click', async (e) => {
             e.preventDefault();
             if (!confirm('Clear ALL cycle history?')) return;
-            const fd = new FormData(); fd.append('action', 'clear_history');
+            const fd = new FormData();
+            fd.append('action', 'clear_history');
             try {
-                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const res = await fetch(location.href, {
+                    method: 'POST',
+                    body: fd
+                });
                 const j = await res.json();
-                if (!j.ok) { setFlash(false, j.msg || 'Clear failed'); return; }
-                renderHistory([]); setFlash(true, 'History cleared');
-            } catch (err) { setFlash(false, err.message || 'Network error'); }
+                if (!j.ok) {
+                    setFlash(false, j.msg || 'Clear failed');
+                    return;
+                }
+                renderHistory([]);
+                setFlash(true, 'History cleared');
+            } catch (err) {
+                setFlash(false, err.message || 'Network error');
+            }
         });
 
         // Delegate clicks on delete buttons in the history table
@@ -789,7 +818,10 @@ $payload = [
             fd.append('id', id);
 
             try {
-                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const res = await fetch(location.href, {
+                    method: 'POST',
+                    body: fd
+                });
                 const j = await res.json();
                 if (!j.ok) {
                     setFlash(false, j.msg || 'Delete failed');
@@ -801,7 +833,8 @@ $payload = [
 
                 // If table is empty, show placeholder row
                 if (!historyTbody.querySelector('tr')) {
-                    historyTbody.innerHTML = '<tr class="text-muted"><td colspan="8">No cycles saved yet.</td></tr>';
+                    historyTbody.innerHTML =
+                        '<tr class="text-muted"><td colspan="8">No cycles saved yet.</td></tr>';
                 }
 
                 setFlash(true, 'History record deleted');
@@ -856,19 +889,33 @@ $payload = [
             };
 
             try {
-                const res = await fetch(location.href, { method: 'POST', body: fd });
+                const res = await fetch(location.href, {
+                    method: 'POST',
+                    body: fd
+                });
                 const j = await res.json();
-                if (!j.ok) { renderAudit([]); alert(j.msg || 'Search failed'); return; }
+                if (!j.ok) {
+                    renderAudit([]);
+                    alert(j.msg || 'Search failed');
+                    return;
+                }
                 renderAudit(j.rows || []);
             } catch (err) {
-                renderAudit([]); alert(err.message || 'Network error');
+                renderAudit([]);
+                alert(err.message || 'Network error');
             }
         }
 
-        btnASearch.addEventListener('click', (e) => { e.preventDefault(); doAuditSearch(); });
+        btnASearch.addEventListener('click', (e) => {
+            e.preventDefault();
+            doAuditSearch();
+        });
         btnAReset.addEventListener('click', (e) => {
             e.preventDefault();
-            auditStart.value = ''; auditEnd.value = ''; auditUser.value = ''; auditType.value = 'any';
+            auditStart.value = '';
+            auditEnd.value = '';
+            auditUser.value = '';
+            auditType.value = 'any';
             renderAudit([]);
         });
         btnAExport.addEventListener('click', (e) => {
@@ -880,7 +927,10 @@ $payload = [
                 type: auditType.value || 'any'
             };
             // This navigates to a GET that streams CSV with the same filters.
-            const params = new URLSearchParams({ ...q, export: 'audit' });
+            const params = new URLSearchParams({
+                ...q,
+                export: 'audit'
+            });
             window.location.href = location.pathname + '?' + params.toString();
         });
     })();
