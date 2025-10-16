@@ -1,15 +1,12 @@
 <?php
-// manager-dash.php (with audit_logs writes)
-// -----------------------------------------------------------------------------
-// Every state-changing action performed by a manager will leave a record in
-// audit_logs: read / forwarded / flagged / deleted.
-// target_user_id is taken from affirmations.recipient_id.
+// manager-dash.php (with audit_logs writes and single-user forward)
 // -----------------------------------------------------------------------------
 
 declare(strict_types=1);
 
 session_start();
 require 'db_connection.php';
+require_once 'mailer.php';
 
 if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'manager') {
     header('Location: login.php?err=unauthorized');
@@ -46,23 +43,19 @@ try {
 }
 
 /* -------------------- helpers --------------------------------------------- */
-/**
- * Ensure the affirmation belongs to this manager's team (by sender_id).
- */
 function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
 {
     $sql = "
         SELECT 1
         FROM affirmations a
-        LEFT JOIN manager_staff ms_rec
-               ON ms_rec.staff_id = a.recipient_id
-              AND ms_rec.manager_id = :mid_rec
-        LEFT JOIN manager_staff ms_send
-               ON ms_send.staff_id = a.sender_id
-              AND ms_send.manager_id = :mid_send
+        JOIN manager_staff ms_r
+          ON ms_r.staff_id = a.recipient_id
+         AND ms_r.manager_id = :mid_rec
+        LEFT JOIN manager_staff ms_s
+          ON ms_s.staff_id = a.sender_id
+         AND ms_s.manager_id = :mid_send
         WHERE a.affirmation_id = :aid
-          AND (ms_rec.staff_id IS NOT NULL OR a.recipient_id = :mid_self1)
-          AND (a.recipient_id = :mid_self2 OR ms_send.staff_id IS NULL)
+          AND ms_s.staff_id IS NULL
         LIMIT 1
     ";
     $st = $pdo->prepare($sql);
@@ -70,8 +63,6 @@ function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
         'aid' => $aid,
         'mid_rec' => $managerId,
         'mid_send' => $managerId,
-        'mid_self1' => $managerId,
-        'mid_self2' => $managerId,
     ]);
     if (!$st->fetchColumn()) {
         http_response_code(403);
@@ -79,16 +70,8 @@ function assertTeamAffirmation(PDO $pdo, int $managerId, int $aid): void
     }
 }
 
-
-/**
- * Insert a row into audit_logs for the given affirmation/action.
- * - actor_user_id = manager performing the action
- * - target_user_id = a.recipient_id (if available)
- * - reason is optional; pass for "flagged"
- */
 function audit_log(PDO $pdo, int $affirmationId, int $actorUserId, string $action, ?string $reason = null): void
 {
-    // Fetch recipient_id to fill target_user_id (best-effort)
     $recip = $pdo->prepare("SELECT recipient_id FROM affirmations WHERE affirmation_id = ?");
     $recip->execute([$affirmationId]);
     $targetUserId = $recip->fetchColumn();
@@ -115,29 +98,55 @@ if ($action) {
     }
     assertTeamAffirmation($pdo, $managerId, $aid);
 
-    // Mark as read only if currently unread; log audit when actually changed.
     if ($action === 'mark_read') {
         $st = $pdo->prepare("UPDATE affirmations SET status='read' WHERE affirmation_id=:aid AND status='unread'");
         $st->execute(['aid' => $aid]);
         if ($st->rowCount() > 0) {
-            // Only log if status transitioned to read
             audit_log($pdo, $aid, $managerId, 'read', null);
         }
         exit('OK');
     }
 
-    // Forward — set status then log the audit entry.
     if ($action === 'forward') {
+        $recipientId = (int) ($_POST['forward_recipient'] ?? 0);
+        if ($recipientId <= 0) {
+            header('Location: manager-dash.php?err=no_recipient');
+            exit;
+        }
+
         $st = $pdo->prepare("UPDATE affirmations SET status='forwarded' WHERE affirmation_id=:aid");
         $st->execute(['aid' => $aid]);
 
         audit_log($pdo, $aid, $managerId, 'forwarded', null);
 
+        $stmtAff = $pdo->prepare("SELECT subject, message FROM affirmations WHERE affirmation_id = :aid");
+        $stmtAff->execute(['aid' => $aid]);
+        $msg = $stmtAff->fetch(PDO::FETCH_ASSOC);
+
+        if ($msg) {
+            $stmtUser = $pdo->prepare("SELECT email FROM users WHERE id=:id LIMIT 1");
+            $stmtUser->execute(['id' => $recipientId]);
+            $recipientEmail = $stmtUser->fetchColumn();
+
+            if ($recipientEmail && filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+                $subject = "Forwarded Affirmation: " . htmlspecialchars($msg['subject'] ?? 'No Subject');
+                $body = "
+                    <p>Hello,</p>
+                    <p>An affirmation has been forwarded to you by your manager.</p>
+                    <p><strong>Subject:</strong> " . htmlspecialchars($msg['subject'] ?? 'No Subject') . "</p>
+                    <p><strong>Message:</strong></p>
+                    <blockquote>" . nl2br(htmlspecialchars($msg['message'] ?? '')) . "</blockquote>
+                    <p>Please log in to your dashboard to view and respond.</p>
+                    <p>– manager</p>
+                ";
+                send_mail($recipientEmail, $subject, $body);
+            }
+        }
+
         header('Location: manager-dash.php?ok=forwarded');
         exit;
     }
 
-    // Flag as abuse — set status + reason then log with reason.
     if ($action === 'flag') {
         $reasons = trim((string) ($_POST['reasons'] ?? '')) ?: null;
         $st = $pdo->prepare("UPDATE affirmations SET status='flagged', flag_reason=:r WHERE affirmation_id=:aid");
@@ -149,7 +158,6 @@ if ($action) {
         exit;
     }
 
-    // Delete — write an audit row FIRST, then delete the record (children first).
     if ($action === 'delete') {
         try {
             $pdo->beginTransaction();
@@ -158,7 +166,6 @@ if ($action) {
 
             $pdo->prepare("DELETE FROM mail_logs WHERE affirmation_id = :aid")->execute(['aid' => $aid]);
             $pdo->prepare("DELETE FROM audit_logs WHERE affirmation_id = :aid")->execute(['aid' => $aid]);
-
             $pdo->prepare("DELETE FROM affirmations WHERE affirmation_id = :aid")->execute(['aid' => $aid]);
 
             $pdo->commit();
@@ -189,36 +196,31 @@ $st = $pdo->prepare("
   SELECT a.*, ur.email AS recipient_email
   FROM affirmations a
   JOIN users ur ON ur.id = a.recipient_id
-  LEFT JOIN manager_staff ms_rec
-         ON ms_rec.staff_id = a.recipient_id
-        AND ms_rec.manager_id = :mid_r
-  LEFT JOIN manager_staff ms_send
-         ON ms_send.staff_id = a.sender_id
-        AND ms_send.manager_id = :mid_s
-  WHERE (ms_rec.staff_id IS NOT NULL OR a.recipient_id = :mid_self1)
-    AND (a.recipient_id = :mid_self2 OR ms_send.staff_id IS NULL)
+  JOIN manager_staff ms_r
+    ON ms_r.staff_id = a.recipient_id
+   AND ms_r.manager_id = :mid_rec
+  LEFT JOIN manager_staff ms_s
+    ON ms_s.staff_id = a.sender_id
+   AND ms_s.manager_id = :mid_send
+  WHERE ms_s.staff_id IS NULL
   ORDER BY a.submitted_at DESC
 ");
 $st->execute([
-    'mid_r' => $managerId,
-    'mid_s' => $managerId,
-    'mid_self1' => $managerId,
-    'mid_self2' => $managerId,
+    'mid_rec' => $managerId,
+    'mid_send' => $managerId,
 ]);
 $teamAffirmations = $st->fetchAll(PDO::FETCH_ASSOC);
-
 
 include 'header.php';
 ?>
 
 <div class="body">
-    <!-- Team line -->
     <div class="container mt-3">
         <?php if ($teamMembers): ?>
             <div class="small text-muted mb-3">
                 Team:
                 <?php foreach ($teamMembers as $i => $m): ?>
-                    <?= $i > 0 ? ' , ' : '' ?>         <?= htmlspecialchars($m['email']) ?>
+                    <?= $i > 0 ? ' , ' : '' ?><?= htmlspecialchars($m['email']) ?>
                 <?php endforeach; ?>
             </div>
         <?php endif; ?>
@@ -230,12 +232,11 @@ include 'header.php';
                 $aid = (int) $row['affirmation_id'];
                 $status = strtolower($row['status'] ?: 'unread');
                 $statusClass = 'status--' . $status;
-                ?>
+            ?>
                 <article class="msg" data-aid="<?= $aid ?>" data-status="<?= htmlspecialchars($status) ?>"
                     aria-expanded="false">
                     <div class="msg__head" role="button">
                         <div class="avatar"><?= strtoupper(substr($row['recipient_email'], 0, 1)) ?></div>
-
                         <div class="text">
                             <div class="to-line">
                                 to <span><?= htmlspecialchars($row['recipient_email']) ?></span>
@@ -243,11 +244,9 @@ include 'header.php';
                                     <span class="dot"></span><span><?= ucfirst($status) ?></span>
                                 </div>
                             </div>
-
                             <div class="subject"><?= htmlspecialchars($row['subject']) ?></div>
                             <div class="snippet"><?= htmlspecialchars(mb_strimwidth($row['message'], 0, 160, '…')) ?></div>
                         </div>
-
                         <div class="state">
                             <div class="meta">
                                 <i class="fa-solid fa-clock"></i>
@@ -282,6 +281,18 @@ include 'header.php';
                             <form method="POST" class="d-inline">
                                 <input type="hidden" name="action" value="forward">
                                 <input type="hidden" name="affirmation_id" value="<?= $aid ?>">
+
+                                <div class="form-group my-2">
+                                    <label for="forwardRecipient-<?= $aid ?>">Send to:</label>
+                                    <select name="forward_recipient" id="forwardRecipient-<?= $aid ?>" class="form-control"
+                                        required>
+                                        <option value="" disabled selected>Select a user</option>
+                                        <?php foreach ($teamMembers as $m): ?>
+                                            <option value="<?= (int)$m['id'] ?>"><?= htmlspecialchars($m['email']) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+
                                 <button type="submit" class="btn btn-secondary btn-forward">Forward</button>
                             </form>
                         </div>
@@ -351,8 +362,7 @@ include 'header.php';
 <?php include 'footer.php'; ?>
 
 <script>
-    /* Flag modal wiring */
-    $('#flagModal').on('show.bs.modal', function (ev) {
+    $('#flagModal').on('show.bs.modal', function(ev) {
         var btn = ev.relatedTarget;
         var aid = btn && btn.getAttribute('data-aid');
         document.getElementById('flagAid').value = aid || '';
@@ -360,7 +370,7 @@ include 'header.php';
         document.getElementById('flagHint').classList.add('d-none');
     });
 
-    document.getElementById('flagForm').addEventListener('submit', function (e) {
+    document.getElementById('flagForm').addEventListener('submit', function(e) {
         var checks = Array.from(document.querySelectorAll('#reasonsGroup input[type=checkbox]:checked'));
         if (!checks.length) {
             e.preventDefault();
@@ -370,14 +380,13 @@ include 'header.php';
         document.getElementById('flagReasons').value = checks.map(c => c.value).join(', ');
     });
 
-    /* Delete modal: inject AID */
-    $('#confirmDelete').on('show.bs.modal', function (ev) {
+    $('#confirmDelete').on('show.bs.modal', function(ev) {
         var btn = ev.relatedTarget;
         var aid = btn && btn.getAttribute('data-aid');
         document.getElementById('delAid').value = aid || '';
     });
 
-    document.querySelector('.inbox').addEventListener('click', function (e) {
+    document.querySelector('.inbox').addEventListener('click', function(e) {
         var btn = e.target.closest('.arrow-btn, .msg__head');
         if (!btn) return;
 
@@ -407,9 +416,11 @@ include 'header.php';
 
             fetch('manager-dash.php', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
                 body: 'action=mark_read&affirmation_id=' + encodeURIComponent(aid)
-            }).catch(function () {
+            }).catch(function() {
                 msg.dataset.status = 'unread';
                 if (pill) {
                     pill.classList.add('status--unread');
@@ -417,7 +428,7 @@ include 'header.php';
                     var textEl2 = pill.querySelector('span:last-child');
                     if (textEl2) textEl2.textContent = 'Unread';
                 }
-            }).finally(function () {
+            }).finally(function() {
                 delete msg.dataset.busy;
             });
         }
